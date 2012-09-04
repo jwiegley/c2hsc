@@ -4,6 +4,7 @@ module Main where
 
 import           Control.Monad
 import           Control.Monad.Trans.State
+import           Data.Foldable hiding (mapM_)
 import           Data.List
 import qualified Data.Map as M
 import           Data.Maybe
@@ -136,26 +137,25 @@ declInfo (CAsmExt _ info)                  = info
 appendNode :: FilePath -> CExtDecl -> Output ()
 
 appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) =
-  forM_ items $ \(declrtr, _, _) -> do
-    case splitDecl declrtr of
-      Nothing -> return ()
-      Just (d, ddrs, name) ->
-        case ddrs of
-          CFunDeclr (Right (_, _)) _ _ : _ ->
-            when (declInFile fp dx) $
-              appendFunc "#ccall" declSpecs d
-          _ -> do
-            when (declInFile fp dx) $ do
-              appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
-              appendType declSpecs name
+  for_ items $ \(declrtr, _, _) -> do
+    for_ (splitDecl declrtr) $ \(d, ddrs, name) ->
+      case ddrs of
+        CFunDeclr (Right (_, _)) _ _ : _ ->
+          when (declInFile fp dx) $
+            appendFunc "#ccall" declSpecs d
 
-            -- If the type is a typedef, record the equivalence so we can look
-            -- it up later, when a CTypeDef is encountered (see 'typeName',
-            -- below)
-            case head declSpecs of
-              CStorageSpec (CTypedef _) ->
-                declSpecTypeName declSpecs >>= defineType name
-              _ -> return ()
+        _ -> do
+          when (declInFile fp dx) $ do
+            appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
+            appendType declSpecs name
+
+          -- If the type is a typedef, record the equivalence so we can look
+          -- it up later, when a CTypeDef is encountered (see 'typeName',
+          -- below)
+          case head declSpecs of
+            CStorageSpec (CTypedef _) ->
+              declSpecTypeName declSpecs >>= defineType name
+            _ -> return ()
   where
     splitDecl declrtr = do
       -- Take advantage of the Maybe monad to save us some effort
@@ -200,20 +200,24 @@ appendType :: [CDeclarationSpecifier a] -> String -> Output ()
 appendType declSpecs _ = mapM_ appendType' declSpecs
   where
     appendType' (CTypeSpec (CSUType (CStruct _ ident decls _ _) _)) =
-      case ident of
-        Nothing -> return ()
-        Just (Ident name _ _) ->
-          case decls of
-            Nothing -> appendHsc $ "#opaque_t " ++ name
-            Just xs -> do
-              appendHsc $ "#starttype " ++ name
-              forM_ xs $ \x ->
-                case cdeclName x of
-                  Nothing -> return ()
-                  Just declName -> do
-                    tname <- cdeclTypeName x
-                    appendHsc $ "#field " ++ declName ++ " , " ++ tname
-              appendHsc "#stoptype"
+      for_ ident $ \(Ident name _ _) ->
+        case decls of
+          Nothing -> appendHsc $ "#opaque_t " ++ name
+          Just xs -> do
+            appendHsc $ "#starttype " ++ name
+            for_ xs $ \x ->
+              for_ (cdeclName x) $ \declName -> do
+                tname <- cdeclTypeName x
+                appendHsc $ "#field " ++ declName ++ " , " ++ tname
+            appendHsc "#stoptype"
+
+    appendType' (CTypeSpec (CEnumType (CEnum ident defs _ _) _)) = do
+      for_ ident $ \(Ident name _ _) ->
+        appendHsc $ "#integral_t " ++ name
+
+      for_ defs $ \ds ->
+        for_ ds $ \((Ident name _ _), _) -> do
+          appendHsc $ "#num " ++ name
 
     appendType' _ = return ()
 
@@ -298,9 +302,7 @@ typeName (CLongType _) s   = case s of
 
 typeName (CTypeDef (Ident name _ _) _) _ = do
   definition <- lookupType name
-  case definition of
-    Nothing  -> return $ "<" ++ name ++ ">"
-    Just def -> return def
+  return $ fromMaybe ("<" ++ name ++ ">") definition
 
 typeName (CComplexType _) _  = return $ ""
 typeName (CSUType _ _) _     = return $ ""
