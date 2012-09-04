@@ -1,6 +1,6 @@
 Name: c2hsc
 
-Version:  0.0.1
+Version:  0.1.0
 Synopsis: Convert C API header files to .hsc and .hsc.helper.c files
 
 Description: Convert C API header files to .hsc and .hsc.helper.c files
@@ -22,9 +22,13 @@ Executable c2hs
 
     Build-depends: base >= 4 && < 5
                  , mtl >= 1.1 && < 2.1
+                 , containers
+                 , transformers
                  , directory
                  , language-c
                  , HStringTemplate
+                 , pretty
+                 , filepath
 
 Source-repository head
   type:     git
