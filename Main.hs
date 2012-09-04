@@ -2,8 +2,10 @@ module Main where
 
 -- parseFile "/usr/bin/gcc" ["-U__BLOCKS__", "/Users/johnw/src/hlibgit2/libgit2/include/git2/types.h"]
 
+import           Control.Applicative
 import           Control.Monad hiding (sequence)
 import           Control.Monad.Trans.State
+import           Data.Char
 import           Data.Foldable
 import           Data.List
 import qualified Data.Map as M
@@ -21,11 +23,12 @@ import           Language.C.System.Preprocess
 import           Prelude hiding (sequence)
 import           System.Directory
 import           System.Environment
+import           System.FilePath
+import           System.IO
 import           Text.PrettyPrint as P
 import           Text.StringTemplate
 
 ------------------------------ IMPURE FUNCTIONS ------------------------------
-import           Control.Applicative
 
 -- Parsing of C headers begins with finding gcc so we can run the
 -- preprocessor.
@@ -45,21 +48,56 @@ parseFile :: FilePath -> [String] -> IO ()
 parseFile gccPath args = do
   fileName <- canonicalizePath $ last args
   result   <- runPreprocessor (newGCC gccPath)
-                              (rawCppArgs (init args) fileName)
+                              (rawCppArgs (tail . init $ args) fileName)
   case result of
     Left err     -> error $ "Failed to run cpp: " ++ show err
     Right stream -> do
       let HscOutput hscs helpercs _ =
             execState (parseCFile stream fileName (initPos fileName))
                       newHscState
-      writeProducts hscs helpercs
+      writeProducts (head args) fileName hscs helpercs
 
 -- Write out the gathered data
 
-writeProducts :: [String] -> [String] -> IO ()
-writeProducts hscs helpercs = do
-  traverse_ putStrLn hscs
-  traverse_ putStrLn helpercs
+writeProducts :: String -> FilePath -> [String] -> [String] -> IO ()
+writeProducts libName fileName hscs helpercs = do
+  let tmpl = unlines [ "#include <bindings.dsl.h>"
+                     , "#include <git2.h>"
+                     , "module $libName$.$cFileName$ where"
+                     , "#strict_import"
+                     , "" ]
+      vars = [ ("libName",   libName)
+             , ("cFileName", cap) ]
+      code = newSTMP tmpl
+      base = dropExtension . takeFileName $ fileName
+      cap  = capitalize base
+
+  let target = cap ++ ".hsc"
+  handle <- openFile target WriteMode
+
+  hPutStrLn handle $ toString $ setManyAttrib vars code
+
+  -- Sniff through the file again, but looking only for local #include's
+  contents <- readFile fileName
+  for_ (lines contents) $ \line ->
+    when ("#include \"" `isPrefixOf` line) $
+      hPutStrLn handle $ "import "
+                      ++ libName ++ "."
+                      ++ (capitalize . takeWhile (/= '.') . drop 10 $ line)
+
+  traverse_ (hPutStrLn handle) hscs
+  hClose handle
+  putStrLn $ "Wrote " ++ target
+
+  when (length helpercs > 0) $ do
+    let targetc = cap ++ ".hsc.helper.c"
+    handlec <- openFile targetc WriteMode
+    traverse_ (hPutStrLn handlec) helpercs
+    hClose handlec
+    putStrLn $ "Wrote " ++ targetc
+
+  where capitalize [] = []
+        capitalize (x:xs) = toTitle x : xs
 
 ------------------------------- PURE FUNCTIONS -------------------------------
 
@@ -154,8 +192,13 @@ appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) =
           -- it up later
           case head declSpecs of
             CStorageSpec (CTypedef _) -> do
+              -- jww (2012-09-04): Types which are typedefs of functions
+              -- pointers are not working, since declSpecTypeName only gives
+              -- the function return type, not the function type
               dname <- declSpecTypeName declSpecs
-              defineType name dname
+              case dname of
+                "" -> return ()
+                _  -> defineType name dname
             _ -> return ()
   where
     splitDecl declrtr = do
@@ -183,11 +226,14 @@ appendFunc marker declSpecs (CDeclr ident ddrs _ _ _) = do
   let name' = nameFromIdent ident
       tmpl  = "$marker$ $name$ , $argTypes;separator=' -> '$ -> IO ($retType$)"
       code  = newSTMP tmpl
+      -- I have to this separately since argTypes :: [String]
       code' = setAttribute "argTypes" argTypes code
+      vars  = [ ("marker",  marker)
+              , ("name",    name')
+              , ("retType", retType) ]
 
-  appendHsc $ toString $ setManyAttrib [ ("marker",  marker)
-                                       , ("name",    name')
-                                       , ("retType", retType) ] code'
+  appendHsc $ toString $ setManyAttrib vars code'
+
   where
     getArgTypes (CFunDeclr (Right (decls, _)) _ _) = map cdeclTypeName decls
     getArgTypes _ = []
@@ -226,7 +272,6 @@ appendType declSpecs declrName = traverse_ appendType' declSpecs
     identName ident = case ident of
                         Nothing -> declrName
                         Just (Ident name _ _) -> name
-
 
 -- The remainder of this file is some hairy code for turning various
 -- constructs into Bindings-DSL type names, such as turning "int ** foo" into
