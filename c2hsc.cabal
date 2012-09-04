@@ -1,0 +1,30 @@
+Name: c2hsc
+
+Version:  0.0.1
+Synopsis: Convert C API header files to .hsc and .hsc.helper.c files
+
+Description: Convert C API header files to .hsc and .hsc.helper.c files
+
+Homepage:           https://github.com/jwiegley/c2hsc
+License:            BSD3
+License-file:       LICENSE
+Author:             John Wiegley
+Maintainer:         John Wiegley <johnw@newartisans.com>
+Category:           Utilities
+Build-type:         Simple
+Cabal-version:      >= 1.8
+
+Extra-Source-Files: README.md
+
+Executable una
+    Main-is: Main.hs
+    Ghc-options: -Wall
+
+    Build-depends: base >= 4 && < 5
+                 , directory
+                 , language-c
+                 , HStringTemplate
+
+Source-repository head
+  type:     git
+  location: https://github.com/jwiegley/c2hsc
