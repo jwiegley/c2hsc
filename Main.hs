@@ -1,7 +1,5 @@
 module Main where
 
--- parseFile "/usr/bin/gcc" ["-U__BLOCKS__", "/Users/johnw/src/hlibgit2/libgit2/include/git2/types.h"]
-
 import           Control.Applicative
 import           Control.Monad hiding (sequence)
 import           Control.Monad.Trans.State
@@ -226,7 +224,7 @@ appendNode fp dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
             (CFunDeclr (Right (decls, _)) _ _) -> do
               let argsList =
                     concat . intersperse ", " . map (P.render . pretty) $ decls
-              retType <- cDerDeclrTypeName declSpecs (tail ddrs)
+              retType <- derDeclrTypeName' True declSpecs (tail ddrs)
               if retType /= ""
                 then appendHelper $ "BC_INLINE" ++ show (length decls)
                                  ++ "(" ++ name ++ ", " ++ argsList
@@ -321,8 +319,12 @@ declrTypeName :: [CDeclarationSpecifier a] -> CDeclarator a -> Output String
 declrTypeName declSpecs (CDeclr _ ddrs _ _ _) = derDeclrTypeName declSpecs ddrs
 
 derDeclrTypeName :: [CDeclarationSpecifier a] -> [CDerivedDeclarator a]
-                   -> Output String
-derDeclrTypeName declSpecs ddrs =
+                 -> Output String
+derDeclrTypeName = derDeclrTypeName' False
+
+derDeclrTypeName' :: Bool -> [CDeclarationSpecifier a] -> [CDerivedDeclarator a]
+                  -> Output String
+derDeclrTypeName' cStyle declSpecs ddrs =
   applyPointers <$> fullTypeName' None declSpecs <*> pure ddrs
   where
     fullTypeName' :: Signedness -> [CDeclarationSpecifier a] -> Output String
@@ -331,22 +333,32 @@ derDeclrTypeName declSpecs ddrs =
       case x of
         CTypeSpec (CSignedType _) -> fullTypeName' Signed xs
         CTypeSpec (CUnsigType _)  -> fullTypeName' Unsigned xs
-        CTypeSpec tspec           -> typeName tspec s
+        CTypeSpec tspec           -> if cStyle
+                                     then cTypeName tspec s
+                                     else typeName tspec s
         _                         -> fullTypeName' s xs
 
     applyPointers :: String -> [CDerivedDeclarator a] -> String
     applyPointers baseType [] = baseType
     applyPointers baseType (x:[]) =
       case x of
-        CPtrDeclr _ _ -> if baseType == ""
-                         then "Ptr ()"
-                         else "Ptr " ++ baseType
+        CPtrDeclr _ _ ->
+          if cStyle
+          then if baseType == ""
+               then "void *"
+               else baseType ++ " *"
+          else if baseType == ""
+               then "Ptr ()"
+               else "Ptr " ++ baseType
         _ -> ""
     applyPointers baseType (x:xs) =
       case x of
-        CPtrDeclr _ _ -> "Ptr (" ++ applyPointers baseType xs ++ ")"
+        CPtrDeclr _ _ ->
+          if cStyle
+          then applyPointers baseType xs ++ " *"
+          else "Ptr (" ++ applyPointers baseType xs ++ ")"
         _ -> ""
-
+
 -- Simple translation from C types to Foreign.C.Types types.  We represent
 -- Void as the empty string so that returning void becomes IO (), and passing
 -- a void star becomes Ptr ().
@@ -387,36 +399,9 @@ typeName (CTypeOfType _ _) _ = return $ ""
 
 typeName _ _ = return $ ""
 
-cDerDeclrTypeName :: [CDeclarationSpecifier a] -> [CDerivedDeclarator a]
-                   -> Output String
-cDerDeclrTypeName declSpecs ddrs =
-  applyPointers <$> fullTypeName' None declSpecs <*> pure ddrs
-  where
-    fullTypeName' :: Signedness -> [CDeclarationSpecifier a] -> Output String
-    fullTypeName' _ []     = return ""
-    fullTypeName' s (x:xs) =
-      case x of
-        CTypeSpec (CSignedType _) -> fullTypeName' Signed xs
-        CTypeSpec (CUnsigType _)  -> fullTypeName' Unsigned xs
-        CTypeSpec tspec           -> cTypeName tspec s
-        _                         -> fullTypeName' s xs
-
-    applyPointers :: String -> [CDerivedDeclarator a] -> String
-    applyPointers baseType [] = baseType
-    applyPointers baseType (x:[]) =
-      case x of
-        CPtrDeclr _ _ -> if baseType == ""
-                         then "void *"
-                         else baseType ++ " *"
-        _ -> ""
-    applyPointers baseType (x:xs) =
-      case x of
-        CPtrDeclr _ _ -> applyPointers baseType xs ++ " *"
-        _ -> ""
-
--- Simple translation from C types to Foreign.C.Types types.  We represent
--- Void as the empty string so that returning void becomes IO (), and passing
--- a void star becomes Ptr ().
+-- Translation from C back to C.  Needed because there's no good way to pretty
+-- print a function's return type (including pointers on the declarator) in
+-- language-c.
 
 cTypeName :: CTypeSpecifier a -> Signedness -> Output String
 
@@ -453,5 +438,7 @@ cTypeName (CTypeOfExpr _ _) _ = return $ ""
 cTypeName (CTypeOfType _ _) _ = return $ ""
 
 cTypeName _ _ = return $ ""
+
+-- parseFile "/usr/bin/gcc" ["-U__BLOCKS__", "/Users/johnw/src/hlibgit2/libgit2/include/git2/types.h"]
 
 -- c2hsc.hs
