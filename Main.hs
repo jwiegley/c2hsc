@@ -2,22 +2,25 @@ module Main where
 
 -- setupParse "/usr/bin/gcc" ["-U__BLOCKS__", "/Users/johnw/src/hlibgit2/libgit2/include/git2/types.h"]
 
-import Control.Monad
-import Control.Monad.State
-import Data.List
-import Data.Maybe
-import Language.C.Data.Ident
-import Language.C.Data.InputStream
-import Language.C.Data.Node
-import Language.C.Data.Position
-import Language.C.Parser
-import Language.C.Syntax.AST
-import Language.C.System.GCC
-import Language.C.System.Preprocess
-import Prelude
-import System.Directory
-import System.Environment
-import Text.StringTemplate
+import           Control.Monad
+import           Control.Monad.Trans.State
+import           Data.List
+import qualified Data.Map as M
+import           Data.Maybe
+import           Language.C.Data.Ident
+import           Language.C.Data.InputStream
+import           Language.C.Data.Node
+import           Language.C.Data.Position
+import           Language.C.Parser
+import           Language.C.Pretty
+import           Language.C.Syntax.AST
+import           Language.C.System.GCC
+import           Language.C.System.Preprocess
+import           Prelude
+import           System.Directory
+import           System.Environment
+import           Text.PrettyPrint as P
+import           Text.StringTemplate
 
 ------------------------------ IMPURE FUNCTIONS ------------------------------
 
@@ -43,7 +46,7 @@ parseFile gccPath args = do
   case result of
     Left err     -> error $ "Failed to run cpp: " ++ show err
     Right stream -> do
-      let HscOutput hscs helpercs =
+      let HscOutput hscs helpercs _ =
             execState (parseCFile stream fileName (initPos fileName))
                       newHscState
       writeProducts hscs helpercs
@@ -63,22 +66,24 @@ writeProducts hscs helpercs = do
 -- pure, and since the data sets involved are relatively small, performance is
 -- not a critical issue.
 
-data HscOutput = HscOutput [String] [String]
+type TypeMap = M.Map String String
+
+data HscOutput = HscOutput [String] [String] TypeMap
 
 type Output = State HscOutput
 
 newHscState :: HscOutput
-newHscState = HscOutput [] []
+newHscState = HscOutput [] [] M.empty
 
 appendHsc :: String -> Output ()
 appendHsc hsc = do
-  HscOutput hscs xs <- get
-  put $ HscOutput (hscs ++ [hsc]) xs
+  HscOutput hscs xs types <- get
+  put $ HscOutput (hscs ++ [hsc]) xs types
 
 appendHelper :: String -> Output ()
 appendHelper helperc = do
-  HscOutput xs helpercs <- get
-  put $ HscOutput xs (helpercs ++ [helperc])
+  HscOutput xs helpercs types <- get
+  put $ HscOutput xs (helpercs ++ [helperc]) types
 
 -- Now we are ready to parse the C code from the preprocessed input stream,
 -- located in the given file and starting at the specified position.  The
@@ -121,22 +126,27 @@ parseCFile stream fileName pos =
 
 printNode :: CExtDecl -> Output ()
 
-printNode (CDeclExt (CDecl declSpecs items _)) =
-  forM_ items $ \(declrtr, _, _) ->
-    case declrtr of
+printNode dx@(CDeclExt (CDecl declSpecs items _)) =
+  forM_ items $ \(declrtr, _, _) -> do
+    case splitDecl declrtr of
       Nothing -> return ()
-      Just d@(CDeclr ident ddrs _ _ _) ->
-        case ident of
-          Nothing -> return ()
-          Just (Ident name _ _) ->
-            case ddrs of
-              CFunDeclr (Right (_, _)) _ _ : _ ->
-                appendFunc "#ccall" declSpecs d
-              _ ->
-                appendType declSpecs name
+      Just (d, ddrs, name) ->
+        case ddrs of
+          CFunDeclr (Right (_, _)) _ _ : _ ->
+            appendFunc "#ccall" declSpecs d
+          _ -> do
+            appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
+            appendType declSpecs name
+
+  where
+    splitDecl declrtr = do
+      -- Take advantage of the Maybe monad to save us some effort
+      d@(CDeclr ident ddrs _ _ _) <- declrtr
+      (Ident name _ _)            <- ident
+      return (d, ddrs, name)
 
 printNode (CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
-  -- Assume that defined functions in headers are inline functions
+  -- Assume functions defined in headers are inline functions
   appendFunc "#cinline" declSpecs declrtr
 
 printNode (CAsmExt _ _) = return ()
@@ -167,16 +177,21 @@ appendFunc marker declSpecs (CDeclr ident ddrs _ _ _) = do
       _ -> "<no name>"
 
 appendType :: [CDeclarationSpecifier a] -> String -> Output ()
-appendType declSpecs name = mapM_ appendType' declSpecs
+appendType declSpecs _ = mapM_ appendType' declSpecs
   where
     appendType' (CTypeSpec (CSUType (CStruct _ ident decls _ _) _)) =
       case ident of
         Nothing -> return ()
-        Just (Ident name' _ _) ->
+        Just (Ident name _ _) ->
           case decls of
-            Nothing -> appendHsc $ "#opaque_t " ++ name'
+            Nothing -> appendHsc $ "#opaque_t " ++ name
             Just xs -> do
-              appendHsc $ "#starttype " ++ name'
+              appendHsc $ "#starttype " ++ name
+              forM_ xs $ \x ->
+                case cdeclName x of
+                  Nothing -> return ()
+                  Just declName -> appendHsc $
+                    "#field " ++ declName ++ " , " ++ cdeclTypeName x
               appendHsc "#stoptype"
 
     appendType' _ = return ()
@@ -186,6 +201,12 @@ appendType declSpecs name = mapM_ appendType' declSpecs
 -- the type name "Ptr (Ptr CInt)".
 
 data Signedness = None | Signed | Unsigned deriving (Eq, Show, Enum)
+
+cdeclName :: CDeclaration a -> Maybe String
+cdeclName (CDecl _ more _) =
+  case more of
+    (Just (CDeclr (Just (Ident name _ _)) _ _ _ _), _, _) : _ -> Just name
+    _ -> Nothing
 
 cdeclTypeName :: CDeclaration a -> String
 cdeclTypeName (CDecl declSpecs more _) =
@@ -237,26 +258,22 @@ typeName (CFloatType _) _  = "CFloat"
 typeName (CDoubleType _) _ = "CDouble"
 typeName (CBoolType _) _   = "CInt"
 
-typeName (CCharType _) s =
-  case s of
-    Signed   -> "CSChar"
-    Unsigned -> "CUChar"
-    _        -> "CChar"
-typeName (CShortType _) s =
-  case s of
-    Signed   -> "CShort"
-    Unsigned -> "CUShort"
-    _        -> "CShort"
-typeName (CIntType _) s =
-  case s of
-    Signed   -> "CInt"
-    Unsigned -> "CUInt"
-    _        -> "CInt"
-typeName (CLongType _) s =
-  case s of
-    Signed   -> "CLong"
-    Unsigned -> "CULong"
-    _        -> "CLong"
+typeName (CCharType _) s   = case s of
+                               Signed   -> "CSChar"
+                               Unsigned -> "CUChar"
+                               _        -> "CChar"
+typeName (CShortType _) s  = case s of
+                               Signed   -> "CShort"
+                               Unsigned -> "CUShort"
+                               _        -> "CShort"
+typeName (CIntType _) s    = case s of
+                               Signed   -> "CInt"
+                               Unsigned -> "CUInt"
+                               _        -> "CInt"
+typeName (CLongType _) s   = case s of
+                               Signed   -> "CLong"
+                               Unsigned -> "CULong"
+                               _        -> "CLong"
 
 typeName (CTypeDef (Ident name _ _) _) _ = "<" ++ name ++ ">"
 
