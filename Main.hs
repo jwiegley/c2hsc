@@ -2,12 +2,13 @@ module Main where
 
 -- parseFile "/usr/bin/gcc" ["-U__BLOCKS__", "/Users/johnw/src/hlibgit2/libgit2/include/git2/types.h"]
 
-import           Control.Monad
+import           Control.Monad hiding (sequence)
 import           Control.Monad.Trans.State
-import           Data.Foldable hiding (mapM_)
+import           Data.Foldable
 import           Data.List
 import qualified Data.Map as M
 import           Data.Maybe
+import           Data.Traversable
 import           Language.C.Data.Ident
 import           Language.C.Data.InputStream
 import           Language.C.Data.Node
@@ -17,14 +18,14 @@ import           Language.C.Pretty
 import           Language.C.Syntax.AST
 import           Language.C.System.GCC
 import           Language.C.System.Preprocess
-import           Prelude
+import           Prelude hiding (sequence)
 import           System.Directory
 import           System.Environment
 import           Text.PrettyPrint as P
 import           Text.StringTemplate
 
 ------------------------------ IMPURE FUNCTIONS ------------------------------
-import Control.Applicative
+import           Control.Applicative
 
 -- Parsing of C headers begins with finding gcc so we can run the
 -- preprocessor.
@@ -57,8 +58,8 @@ parseFile gccPath args = do
 
 writeProducts :: [String] -> [String] -> IO ()
 writeProducts hscs helpercs = do
-  mapM_ putStrLn hscs
-  mapM_ putStrLn helpercs
+  traverse_ putStrLn hscs
+  traverse_ putStrLn helpercs
 
 ------------------------------- PURE FUNCTIONS -------------------------------
 
@@ -109,7 +110,7 @@ parseCFile stream fileName pos =
 
   where
     generateHsc :: [CExtDecl] -> Output ()
-    generateHsc = mapM_ (appendNode fileName)
+    generateHsc = traverse_ (appendNode fileName)
 
 declInFile :: FilePath -> CExtDecl -> Bool
 declInFile fileName = (fileName ==) . infoFile . declInfo
@@ -150,11 +151,11 @@ appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) =
             appendType declSpecs name
 
           -- If the type is a typedef, record the equivalence so we can look
-          -- it up later, when a CTypeDef is encountered (see 'typeName',
-          -- below)
+          -- it up later
           case head declSpecs of
-            CStorageSpec (CTypedef _) ->
-              declSpecTypeName declSpecs >>= defineType name
+            CStorageSpec (CTypedef _) -> do
+              dname <- declSpecTypeName declSpecs
+              defineType name dname
             _ -> return ()
   where
     splitDecl declrtr = do
@@ -197,29 +198,35 @@ appendFunc marker declSpecs (CDeclr ident ddrs _ _ _) = do
       _ -> "<no name>"
 
 appendType :: [CDeclarationSpecifier a] -> String -> Output ()
-appendType declSpecs _ = mapM_ appendType' declSpecs
+appendType declSpecs declrName = traverse_ appendType' declSpecs
   where
-    appendType' (CTypeSpec (CSUType (CStruct _ ident decls _ _) _)) =
-      for_ ident $ \(Ident name _ _) ->
-        case decls of
-          Nothing -> appendHsc $ "#opaque_t " ++ name
-          Just xs -> do
-            appendHsc $ "#starttype " ++ name
-            for_ xs $ \x ->
-              for_ (cdeclName x) $ \declName -> do
-                tname <- cdeclTypeName x
-                appendHsc $ "#field " ++ declName ++ " , " ++ tname
-            appendHsc "#stoptype"
+    appendType' (CTypeSpec (CSUType (CStruct _ ident decls _ _) _)) = do
+      let name' = identName ident
+      when (isNothing decls) $
+        appendHsc $ "#opaque_t " ++ name'
+
+      for_ decls $ \xs -> do
+        appendHsc $ "#starttype " ++ name'
+        for_ xs $ \x ->
+          for_ (cdeclName x) $ \declName -> do
+            tname <- cdeclTypeName x
+            appendHsc $ "#field " ++ declName ++ " , " ++ tname
+        appendHsc "#stoptype"
 
     appendType' (CTypeSpec (CEnumType (CEnum ident defs _ _) _)) = do
-      for_ ident $ \(Ident name _ _) ->
-        appendHsc $ "#integral_t " ++ name
+      let name' = identName ident
+      appendHsc $ "#integral_t " ++ name'
 
       for_ defs $ \ds ->
         for_ ds $ \((Ident name _ _), _) -> do
           appendHsc $ "#num " ++ name
 
     appendType' _ = return ()
+
+    identName ident = case ident of
+                        Nothing -> declrName
+                        Just (Ident name _ _) -> name
+
 
 -- The remainder of this file is some hairy code for turning various
 -- constructs into Bindings-DSL type names, such as turning "int ** foo" into
