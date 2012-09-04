@@ -16,11 +16,12 @@ Cabal-version:      >= 1.8
 
 Extra-Source-Files: README.md
 
-Executable c2hsc
+Executable c2hs
     Main-is: Main.hs
     Ghc-options: -Wall
 
     Build-depends: base >= 4 && < 5
+                 , mtl >= 1.1 && < 2.1
                  , directory
                  , language-c
                  , HStringTemplate
