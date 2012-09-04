@@ -1,6 +1,6 @@
 Name: c2hsc
 
-Version:  0.1.0
+Version:  0.2.0
 Synopsis: Convert C API header files to .hsc and .hsc.helper.c files
 
 Description: Convert C API header files to .hsc and .hsc.helper.c files
@@ -16,12 +16,12 @@ Cabal-version:      >= 1.8
 
 Extra-Source-Files: README.md
 
-Executable c2hs
+Executable c2hsc
     Main-is: Main.hs
     Ghc-options: -Wall
 
     Build-depends: base >= 4 && < 5
-                 , mtl >= 1.1 && < 2.1
+                 , mtl
                  , containers
                  , transformers
                  , directory
