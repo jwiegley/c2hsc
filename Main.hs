@@ -7,7 +7,7 @@ import           Control.Monad hiding (sequence)
 import           Control.Monad.Trans.State
 import           Data.Char
 import           Data.Foldable
-import           Data.List
+import           Data.List hiding (concat)
 import qualified Data.Map as M
 import           Data.Maybe
 import           Data.Traversable
@@ -20,7 +20,7 @@ import           Language.C.Pretty
 import           Language.C.Syntax.AST
 import           Language.C.System.GCC
 import           Language.C.System.Preprocess
-import           Prelude hiding (sequence)
+import           Prelude hiding (concat, sequence)
 import           System.Directory
 import           System.Environment
 import           System.FilePath
@@ -79,20 +79,27 @@ writeProducts libName fileName hscs helpercs = do
 
   -- Sniff through the file again, but looking only for local #include's
   contents <- readFile fileName
-  for_ (lines contents) $ \line ->
-    when ("#include \"" `isPrefixOf` line) $
-      hPutStrLn handle $ "import "
-                      ++ libName ++ "."
-                      ++ (capitalize . takeWhile (/= '.') . drop 10 $ line)
+  let includes = filter ("#include \"" `isPrefixOf`) (lines contents)
+
+  for_ includes $ \inc ->
+    hPutStrLn handle $ "import "
+                    ++ libName ++ "."
+                    ++ (capitalize . takeWhile (/= '.') . drop 10 $ inc)
 
   traverse_ (hPutStrLn handle) hscs
+
   hClose handle
   putStrLn $ "Wrote " ++ target
 
   when (length helpercs > 0) $ do
     let targetc = cap ++ ".hsc.helper.c"
     handlec <- openFile targetc WriteMode
+
+    hPutStrLn handlec "#include <bindings.cmacros.h>"
+    traverse_ (hPutStrLn handlec) includes
+    hPutStrLn handlec ""
     traverse_ (hPutStrLn handlec) helpercs
+
     hClose handlec
     putStrLn $ "Wrote " ++ targetc
 
@@ -200,17 +207,33 @@ appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) =
                 "" -> return ()
                 _  -> defineType name dname
             _ -> return ()
-  where
-    splitDecl declrtr = do
-      -- Take advantage of the Maybe monad to save us some effort
-      d@(CDeclr ident ddrs _ _ _) <- declrtr
-      (Ident name _ _)            <- ident
-      return (d, ddrs, name)
+
+  where splitDecl declrtr = do
+          -- Take advantage of the Maybe monad to save us some effort
+          d@(CDeclr ident ddrs _ _ _) <- declrtr
+          (Ident name _ _)            <- ident
+          return (d, ddrs, name)
 
 appendNode fp dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
   -- Assume functions defined in headers are inline functions
-  when (declInFile fp dx) $
+  when (declInFile fp dx) $ do
     appendFunc "#cinline" declSpecs declrtr
+
+    case declrtr of
+      (CDeclr ident ddrs _ _ _) ->
+        for_ ident $ \(Ident name _ _) ->
+          case head ddrs of
+            (CFunDeclr (Right (decls, _)) _ _) -> do
+              let argsList =
+                    concat . intersperse ", " . map (P.render . pretty) $ decls
+              retType <- cDerDeclrTypeName declSpecs (tail ddrs)
+              if retType /= ""
+                then appendHelper $ "BC_INLINE" ++ show (length decls)
+                                 ++ "(" ++ name ++ ", " ++ argsList
+                                 ++ ", " ++ retType ++ ")"
+                else appendHelper $ "BC_INLINE" ++ show (length decls)
+                                 ++ "VOID(" ++ name ++ ", " ++ argsList ++ ")"
+            _ -> return ()
 
 appendNode _ (CAsmExt _ _) = return ()
 
@@ -363,5 +386,72 @@ typeName (CTypeOfExpr _ _) _ = return $ ""
 typeName (CTypeOfType _ _) _ = return $ ""
 
 typeName _ _ = return $ ""
+
+cDerDeclrTypeName :: [CDeclarationSpecifier a] -> [CDerivedDeclarator a]
+                   -> Output String
+cDerDeclrTypeName declSpecs ddrs =
+  applyPointers <$> fullTypeName' None declSpecs <*> pure ddrs
+  where
+    fullTypeName' :: Signedness -> [CDeclarationSpecifier a] -> Output String
+    fullTypeName' _ []     = return ""
+    fullTypeName' s (x:xs) =
+      case x of
+        CTypeSpec (CSignedType _) -> fullTypeName' Signed xs
+        CTypeSpec (CUnsigType _)  -> fullTypeName' Unsigned xs
+        CTypeSpec tspec           -> cTypeName tspec s
+        _                         -> fullTypeName' s xs
+
+    applyPointers :: String -> [CDerivedDeclarator a] -> String
+    applyPointers baseType [] = baseType
+    applyPointers baseType (x:[]) =
+      case x of
+        CPtrDeclr _ _ -> if baseType == ""
+                         then "void *"
+                         else baseType ++ " *"
+        _ -> ""
+    applyPointers baseType (x:xs) =
+      case x of
+        CPtrDeclr _ _ -> applyPointers baseType xs ++ " *"
+        _ -> ""
+
+-- Simple translation from C types to Foreign.C.Types types.  We represent
+-- Void as the empty string so that returning void becomes IO (), and passing
+-- a void star becomes Ptr ().
+
+cTypeName :: CTypeSpecifier a -> Signedness -> Output String
+
+cTypeName (CVoidType _) _   = return $ ""
+cTypeName (CFloatType _) _  = return $ "float"
+cTypeName (CDoubleType _) _ = return $ "double"
+cTypeName (CBoolType _) _   = return $ "int"
+
+cTypeName (CCharType _) s   = case s of
+                               Signed   -> return $ "signed char"
+                               Unsigned -> return $ "unsigned char"
+                               _        -> return $ "char"
+cTypeName (CShortType _) s  = case s of
+                               Signed   -> return $ "signed short"
+                               Unsigned -> return $ "unsigned short"
+                               _        -> return $ "hort"
+cTypeName (CIntType _) s    = case s of
+                               Signed   -> return $ "signed int"
+                               Unsigned -> return $ "unsigned int"
+                               _        -> return $ "int"
+cTypeName (CLongType _) s   = case s of
+                               Signed   -> return $ "signed long"
+                               Unsigned -> return $ "unsigned long"
+                               _        -> return $ "long"
+
+cTypeName (CTypeDef (Ident name _ _) _) _ = do
+  definition <- lookupType name
+  return $ fromMaybe name definition
+
+cTypeName (CComplexType _) _  = return $ ""
+cTypeName (CSUType _ _) _     = return $ ""
+cTypeName (CEnumType _ _) _   = return $ ""
+cTypeName (CTypeOfExpr _ _) _ = return $ ""
+cTypeName (CTypeOfType _ _) _ = return $ ""
+
+cTypeName _ _ = return $ ""
 
 -- c2hsc.hs
