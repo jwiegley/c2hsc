@@ -16,7 +16,7 @@ Cabal-version:      >= 1.8
 
 Extra-Source-Files: README.md
 
-Executable una
+Executable c2hsc
     Main-is: Main.hs
     Ghc-options: -Wall
 
