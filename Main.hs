@@ -1,6 +1,6 @@
 module Main where
 
--- setupParse "/usr/bin/gcc" ["-U__BLOCKS__", "/Users/johnw/src/hlibgit2/libgit2/include/git2/types.h"]
+-- parseFile "/usr/bin/gcc" ["-U__BLOCKS__", "/Users/johnw/src/hlibgit2/libgit2/include/git2/types.h"]
 
 import           Control.Monad
 import           Control.Monad.Trans.State
@@ -23,6 +23,7 @@ import           Text.PrettyPrint as P
 import           Text.StringTemplate
 
 ------------------------------ IMPURE FUNCTIONS ------------------------------
+import Control.Applicative
 
 -- Parsing of C headers begins with finding gcc so we can run the
 -- preprocessor.
@@ -66,11 +67,9 @@ writeProducts hscs helpercs = do
 -- pure, and since the data sets involved are relatively small, performance is
 -- not a critical issue.
 
-type TypeMap = M.Map String String
-
+type TypeMap   = M.Map String String
 data HscOutput = HscOutput [String] [String] TypeMap
-
-type Output = State HscOutput
+type Output    = State HscOutput
 
 newHscState :: HscOutput
 newHscState = HscOutput [] [] M.empty
@@ -84,6 +83,16 @@ appendHelper :: String -> Output ()
 appendHelper helperc = do
   HscOutput xs helpercs types <- get
   put $ HscOutput xs (helpercs ++ [helperc]) types
+
+defineType :: String -> String -> Output ()
+defineType key value = do
+  HscOutput xs ys types <- get
+  put $ HscOutput xs ys (M.insert key value types)
+
+lookupType :: String -> Output (Maybe String)
+lookupType key = do
+  HscOutput _ _ types <- get
+  return $ M.lookup key types
 
 -- Now we are ready to parse the C code from the preprocessed input stream,
 -- located in the given file and starting at the specified position.  The
@@ -99,18 +108,18 @@ parseCFile stream fileName pos =
 
   where
     generateHsc :: [CExtDecl] -> Output ()
-    generateHsc = mapM_ printNode . filter declInFile
+    generateHsc = mapM_ (appendNode fileName)
 
-    declInFile :: CExtDecl -> Bool
-    declInFile = (fileName ==) . infoFile . declInfo
+declInFile :: FilePath -> CExtDecl -> Bool
+declInFile fileName = (fileName ==) . infoFile . declInfo
 
-    infoFile :: NodeInfo -> String
-    infoFile = posFile . posOfNode
+infoFile :: NodeInfo -> String
+infoFile = posFile . posOfNode
 
-    declInfo :: CExtDecl -> NodeInfo
-    declInfo (CDeclExt (CDecl _ _ info))       = info
-    declInfo (CFDefExt (CFunDef _ _ _ _ info)) = info
-    declInfo (CAsmExt _ info)                  = info
+declInfo :: CExtDecl -> NodeInfo
+declInfo (CDeclExt (CDecl _ _ info))       = info
+declInfo (CFDefExt (CFunDef _ _ _ _ info)) = info
+declInfo (CAsmExt _ info)                  = info
 
 -- These are the top-level printing routines.  We are only interested in
 -- declarations and function defitions (which almost always means inline
@@ -124,20 +133,29 @@ parseCFile stream fileName pos =
 --   - Extern Functions
 --   - Inline Functions
 
-printNode :: CExtDecl -> Output ()
+appendNode :: FilePath -> CExtDecl -> Output ()
 
-printNode dx@(CDeclExt (CDecl declSpecs items _)) =
+appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) =
   forM_ items $ \(declrtr, _, _) -> do
     case splitDecl declrtr of
       Nothing -> return ()
       Just (d, ddrs, name) ->
         case ddrs of
           CFunDeclr (Right (_, _)) _ _ : _ ->
-            appendFunc "#ccall" declSpecs d
+            when (declInFile fp dx) $
+              appendFunc "#ccall" declSpecs d
           _ -> do
-            appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
-            appendType declSpecs name
+            when (declInFile fp dx) $ do
+              appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
+              appendType declSpecs name
 
+            -- If the type is a typedef, record the equivalence so we can look
+            -- it up later, when a CTypeDef is encountered (see 'typeName',
+            -- below)
+            case head declSpecs of
+              CStorageSpec (CTypedef _) ->
+                declSpecTypeName declSpecs >>= defineType name
+              _ -> return ()
   where
     splitDecl declrtr = do
       -- Take advantage of the Maybe monad to save us some effort
@@ -145,11 +163,12 @@ printNode dx@(CDeclExt (CDecl declSpecs items _)) =
       (Ident name _ _)            <- ident
       return (d, ddrs, name)
 
-printNode (CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
+appendNode fp dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
   -- Assume functions defined in headers are inline functions
-  appendFunc "#cinline" declSpecs declrtr
+  when (declInFile fp dx) $
+    appendFunc "#cinline" declSpecs declrtr
 
-printNode (CAsmExt _ _) = return ()
+appendNode _ (CAsmExt _ _) = return ()
 
 -- Print out a function as #ccall or #cinline.  The syntax is the same for
 -- both externs and inlines, except that we want to do extra work for inline
@@ -157,16 +176,17 @@ printNode (CAsmExt _ _) = return ()
 
 appendFunc :: String -> [CDeclarationSpecifier a] -> CDeclarator a -> Output ()
 appendFunc marker declSpecs (CDeclr ident ddrs _ _ _) = do
+  retType  <- derDeclrTypeName declSpecs (tail ddrs)
+  argTypes <- sequence $ getArgTypes (head ddrs)
+
   let name' = nameFromIdent ident
       tmpl  = "$marker$ $name$ , $argTypes;separator=' -> '$ -> IO ($retType$)"
       code  = newSTMP tmpl
-      code' = setAttribute "argTypes" (getArgTypes (head ddrs)) code
+      code' = setAttribute "argTypes" argTypes code
 
-  appendHsc $ toString $ setManyAttrib
-    [ ("marker",  marker)
-    , ("name",    name')
-    , ("retType", derDeclrTypeName declSpecs (tail ddrs)) ] code'
-
+  appendHsc $ toString $ setManyAttrib [ ("marker",  marker)
+                                       , ("name",    name')
+                                       , ("retType", retType) ] code'
   where
     getArgTypes (CFunDeclr (Right (decls, _)) _ _) = map cdeclTypeName decls
     getArgTypes _ = []
@@ -190,8 +210,9 @@ appendType declSpecs _ = mapM_ appendType' declSpecs
               forM_ xs $ \x ->
                 case cdeclName x of
                   Nothing -> return ()
-                  Just declName -> appendHsc $
-                    "#field " ++ declName ++ " , " ++ cdeclTypeName x
+                  Just declName -> do
+                    tname <- cdeclTypeName x
+                    appendHsc $ "#field " ++ declName ++ " , " ++ tname
               appendHsc "#stoptype"
 
     appendType' _ = return ()
@@ -208,25 +229,25 @@ cdeclName (CDecl _ more _) =
     (Just (CDeclr (Just (Ident name _ _)) _ _ _ _), _, _) : _ -> Just name
     _ -> Nothing
 
-cdeclTypeName :: CDeclaration a -> String
+cdeclTypeName :: CDeclaration a -> Output String
 cdeclTypeName (CDecl declSpecs more _) =
   case more of
     (Just x, _, _) : _ -> declrTypeName declSpecs x
     _                  -> declSpecTypeName declSpecs
 
-declSpecTypeName :: [CDeclarationSpecifier a] -> String
+declSpecTypeName :: [CDeclarationSpecifier a] -> Output String
 declSpecTypeName = flip derDeclrTypeName []
 
-declrTypeName :: [CDeclarationSpecifier a] -> CDeclarator a -> String
+declrTypeName :: [CDeclarationSpecifier a] -> CDeclarator a -> Output String
 declrTypeName declSpecs (CDeclr _ ddrs _ _ _) = derDeclrTypeName declSpecs ddrs
 
 derDeclrTypeName :: [CDeclarationSpecifier a] -> [CDerivedDeclarator a]
-                   -> String
+                   -> Output String
 derDeclrTypeName declSpecs ddrs =
-  applyPointers (fullTypeName' None declSpecs) ddrs
+  applyPointers <$> fullTypeName' None declSpecs <*> pure ddrs
   where
-    fullTypeName' :: Signedness -> [CDeclarationSpecifier a] -> String
-    fullTypeName' _ []     = ""
+    fullTypeName' :: Signedness -> [CDeclarationSpecifier a] -> Output String
+    fullTypeName' _ []     = return ""
     fullTypeName' s (x:xs) =
       case x of
         CTypeSpec (CSignedType _) -> fullTypeName' Signed xs
@@ -251,38 +272,42 @@ derDeclrTypeName declSpecs ddrs =
 -- Void as the empty string so that returning void becomes IO (), and passing
 -- a void star becomes Ptr ().
 
-typeName :: CTypeSpecifier a -> Signedness -> String
+typeName :: CTypeSpecifier a -> Signedness -> Output String
 
-typeName (CVoidType _) _   = ""
-typeName (CFloatType _) _  = "CFloat"
-typeName (CDoubleType _) _ = "CDouble"
-typeName (CBoolType _) _   = "CInt"
+typeName (CVoidType _) _   = return $ ""
+typeName (CFloatType _) _  = return $ "CFloat"
+typeName (CDoubleType _) _ = return $ "CDouble"
+typeName (CBoolType _) _   = return $ "CInt"
 
 typeName (CCharType _) s   = case s of
-                               Signed   -> "CSChar"
-                               Unsigned -> "CUChar"
-                               _        -> "CChar"
+                               Signed   -> return $ "CSChar"
+                               Unsigned -> return $ "CUChar"
+                               _        -> return $ "CChar"
 typeName (CShortType _) s  = case s of
-                               Signed   -> "CShort"
-                               Unsigned -> "CUShort"
-                               _        -> "CShort"
+                               Signed   -> return $ "CShort"
+                               Unsigned -> return $ "CUShort"
+                               _        -> return $ "CShort"
 typeName (CIntType _) s    = case s of
-                               Signed   -> "CInt"
-                               Unsigned -> "CUInt"
-                               _        -> "CInt"
+                               Signed   -> return $ "CInt"
+                               Unsigned -> return $ "CUInt"
+                               _        -> return $ "CInt"
 typeName (CLongType _) s   = case s of
-                               Signed   -> "CLong"
-                               Unsigned -> "CULong"
-                               _        -> "CLong"
+                               Signed   -> return $ "CLong"
+                               Unsigned -> return $ "CULong"
+                               _        -> return $ "CLong"
 
-typeName (CTypeDef (Ident name _ _) _) _ = "<" ++ name ++ ">"
+typeName (CTypeDef (Ident name _ _) _) _ = do
+  definition <- lookupType name
+  case definition of
+    Nothing  -> return $ "<" ++ name ++ ">"
+    Just def -> return def
 
-typeName (CComplexType _) _  = ""
-typeName (CSUType _ _) _     = ""
-typeName (CEnumType _ _) _   = ""
-typeName (CTypeOfExpr _ _) _ = ""
-typeName (CTypeOfType _ _) _ = ""
+typeName (CComplexType _) _  = return $ ""
+typeName (CSUType _ _) _     = return $ ""
+typeName (CEnumType _ _) _   = return $ ""
+typeName (CTypeOfExpr _ _) _ = return $ ""
+typeName (CTypeOfType _ _) _ = return $ ""
 
-typeName _ _ = ""
+typeName _ _ = return $ ""
 
 -- c2hsc.hs
