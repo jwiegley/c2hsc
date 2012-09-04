@@ -19,6 +19,7 @@ Known issues:
  - Encode const char * as CString
  - Encode function pointers using FunPtr
  - Unnamed enums are not being emitted
+ - Array parameters, like char x[] are not converted
 
 Also, please note that this tool will never be 100% accurate.  It cannot
 translate macros, or anything related to the preprocessor, for example.  It
