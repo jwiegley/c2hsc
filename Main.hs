@@ -96,7 +96,7 @@ parseFile :: FilePath -> C2HscOptions -> IO ()
 parseFile gccPath opts =
   for_ (files opts) $ \fileName -> do
     result <- runPreprocessor (newGCC gccPath)
-                              (rawCppArgs (files opts) fileName)
+                              (rawCppArgs [(cppopts opts)] fileName)
     case result of
       Left err     -> error $ "Failed to run cpp: " ++ show err
       Right stream -> do
@@ -137,23 +137,21 @@ writeProducts opts fileName hscs helpercs = do
 
   traverse_ (hPutStrLn handle) hscs
 
-  unless (useStdout opts) $
-    hClose handle
+  unless (useStdout opts) $ hClose handle
   putStrLn $ "Wrote " ++ target
 
   when (length helpercs > 0) $ do
     let targetc = cap ++ ".hsc.helper.c"
     handlec <- if useStdout opts
-               then openFile targetc WriteMode
-               else return System.IO.stdout
+               then return System.IO.stdout
+               else openFile targetc WriteMode
 
     hPutStrLn handlec "#include <bindings.cmacros.h>"
     traverse_ (hPutStrLn handlec) includes
     hPutStrLn handlec ""
     traverse_ (hPutStrLn handlec) helpercs
 
-    unless (useStdout opts) $
-      hClose handlec
+    unless (useStdout opts) $ hClose handlec
     putStrLn $ "Wrote " ++ targetc
 
   where capitalize [] = []
@@ -269,21 +267,20 @@ appendNode fp dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
   when (declInFile fp dx) $ do
     appendFunc "#cinline" declSpecs declrtr
 
-    case declrtr of
-      (CDeclr ident ddrs _ _ _) ->
-        for_ ident $ \(Ident nm _ _) ->
-          case head ddrs of
-            (CFunDeclr (Right (decls, _)) _ _) -> do
-              let argsList =
-                    intercalate ", " . map (P.render . pretty) $ decls
-              retType <- derDeclrTypeName' True declSpecs (tail ddrs)
-              if retType /= ""
-                then appendHelper $ "BC_INLINE" ++ show (length decls)
-                                 ++ "(" ++ nm ++ ", " ++ argsList
-                                 ++ ", " ++ retType ++ ")"
-                else appendHelper $ "BC_INLINE" ++ show (length decls)
-                                 ++ "VOID(" ++ nm ++ ", " ++ argsList ++ ")"
-            _ -> return ()
+    let (CDeclr ident ddrs _ _ _) = declrtr
+
+    for_ ident $ \(Ident nm _ _) ->
+      case head ddrs of
+        (CFunDeclr (Right (decls, _)) _ _) -> do
+          let argsList = intercalate ", " . map (P.render . pretty) $ decls
+          retType <- derDeclrTypeName' True declSpecs (tail ddrs)
+          if retType /= ""
+            then appendHelper $ "BC_INLINE" ++ show (length decls)
+                             ++ "(" ++ nm ++ ", " ++ argsList
+                             ++ ", " ++ retType ++ ")"
+            else appendHelper $ "BC_INLINE" ++ show (length decls)
+                             ++ "VOID(" ++ nm ++ ", " ++ argsList ++ ")"
+        _ -> return ()
 
 appendNode _ (CAsmExt _ _) = return ()
 
