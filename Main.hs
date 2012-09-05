@@ -181,7 +181,7 @@ declInfo (CAsmExt _ info)                  = info
 appendNode :: FilePath -> CExtDecl -> Output ()
 
 appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) =
-  for_ items $ \(declrtr, _, _) -> do
+  for_ items $ \(declrtr, _, _) ->
     for_ (splitDecl declrtr) $ \(d, ddrs, name) ->
       case ddrs of
         CFunDeclr (Right (_, _)) _ _ : _ ->
@@ -223,7 +223,7 @@ appendNode fp dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
           case head ddrs of
             (CFunDeclr (Right (decls, _)) _ _) -> do
               let argsList =
-                    concat . intersperse ", " . map (P.render . pretty) $ decls
+                    intercalate ", " . map (P.render . pretty) $ decls
               retType <- derDeclrTypeName' True declSpecs (tail ddrs)
               if retType /= ""
                 then appendHelper $ "BC_INLINE" ++ show (length decls)
@@ -245,17 +245,18 @@ appendFunc marker declSpecs (CDeclr ident ddrs _ _ _) = do
   argTypes <- sequence $ getArgTypes (head ddrs)
 
   let name' = nameFromIdent ident
-      tmpl  = "$marker$ $name$ , $argTypes;separator=' -> '$ -> IO ($retType$)"
+      tmpl  = "$marker$ $name$ , $argTypes;separator=' -> '$$retType$"
       code  = newSTMP tmpl
       -- I have to this separately since argTypes :: [String]
       code' = setAttribute "argTypes" argTypes code
       vars  = [ ("marker",  marker)
               , ("name",    name')
-              , ("retType", retType) ]
+              , ("retType", " -> IO (" ++ retType ++ ")") ]
 
   appendHsc $ toString $ setManyAttrib vars code'
 
   where
+    getArgTypes :: CDerivedDeclarator a -> [Output String]
     getArgTypes (CFunDeclr (Right (decls, _)) _ _) = map cdeclTypeName decls
     getArgTypes _ = []
 
@@ -285,7 +286,7 @@ appendType declSpecs declrName = traverse_ appendType' declSpecs
       appendHsc $ "#integral_t " ++ name'
 
       for_ defs $ \ds ->
-        for_ ds $ \((Ident name _ _), _) -> do
+        for_ ds $ \(Ident name _ _, _) ->
           appendHsc $ "#num " ++ name
 
     appendType' _ = return ()
@@ -339,25 +340,16 @@ derDeclrTypeName' cStyle declSpecs ddrs =
         _                         -> fullTypeName' s xs
 
     applyPointers :: String -> [CDerivedDeclarator a] -> String
-    applyPointers baseType [] = baseType
-    applyPointers baseType (x:[]) =
-      case x of
-        CPtrDeclr _ _ ->
-          if cStyle
-          then if baseType == ""
-               then "void *"
-               else baseType ++ " *"
-          else if baseType == ""
-               then "Ptr ()"
-               else "Ptr " ++ baseType
-        _ -> ""
-    applyPointers baseType (x:xs) =
-      case x of
-        CPtrDeclr _ _ ->
-          if cStyle
-          then applyPointers baseType xs ++ " *"
-          else "Ptr (" ++ applyPointers baseType xs ++ ")"
-        _ -> ""
+    applyPointers baseType (CPtrDeclr _ _:[])
+      | cStyle         = if baseType == "" then "void *" else baseType ++ " *"
+      | baseType == "" = "Ptr ()"
+      | otherwise      = "Ptr " ++ baseType
+
+    applyPointers baseType (CPtrDeclr _ _:xs)
+      | cStyle         = applyPointers baseType xs ++ " *"
+      | otherwise      = "Ptr (" ++ applyPointers baseType xs ++ ")"
+
+    applyPointers baseType _ = baseType
 
 -- Simple translation from C types to Foreign.C.Types types.  We represent
 -- Void as the empty string so that returning void becomes IO (), and passing
@@ -365,39 +357,39 @@ derDeclrTypeName' cStyle declSpecs ddrs =
 
 typeName :: CTypeSpecifier a -> Signedness -> Output String
 
-typeName (CVoidType _) _   = return $ ""
-typeName (CFloatType _) _  = return $ "CFloat"
-typeName (CDoubleType _) _ = return $ "CDouble"
-typeName (CBoolType _) _   = return $ "CInt"
+typeName (CVoidType _) _   = return ""
+typeName (CFloatType _) _  = return "CFloat"
+typeName (CDoubleType _) _ = return "CDouble"
+typeName (CBoolType _) _   = return "CInt"
 
 typeName (CCharType _) s   = case s of
-                               Signed   -> return $ "CSChar"
-                               Unsigned -> return $ "CUChar"
-                               _        -> return $ "CChar"
+                               Signed   -> return "CSChar"
+                               Unsigned -> return "CUChar"
+                               _        -> return "CChar"
 typeName (CShortType _) s  = case s of
-                               Signed   -> return $ "CShort"
-                               Unsigned -> return $ "CUShort"
-                               _        -> return $ "CShort"
+                               Signed   -> return "CShort"
+                               Unsigned -> return "CUShort"
+                               _        -> return "CShort"
 typeName (CIntType _) s    = case s of
-                               Signed   -> return $ "CInt"
-                               Unsigned -> return $ "CUInt"
-                               _        -> return $ "CInt"
+                               Signed   -> return "CInt"
+                               Unsigned -> return "CUInt"
+                               _        -> return "CInt"
 typeName (CLongType _) s   = case s of
-                               Signed   -> return $ "CLong"
-                               Unsigned -> return $ "CULong"
-                               _        -> return $ "CLong"
+                               Signed   -> return "CLong"
+                               Unsigned -> return "CULong"
+                               _        -> return "CLong"
 
 typeName (CTypeDef (Ident name _ _) _) _ = do
   definition <- lookupType name
   return $ fromMaybe ("<" ++ name ++ ">") definition
 
-typeName (CComplexType _) _  = return $ ""
-typeName (CSUType _ _) _     = return $ ""
-typeName (CEnumType _ _) _   = return $ ""
-typeName (CTypeOfExpr _ _) _ = return $ ""
-typeName (CTypeOfType _ _) _ = return $ ""
+typeName (CComplexType _) _  = return ""
+typeName (CSUType _ _) _     = return ""
+typeName (CEnumType _ _) _   = return ""
+typeName (CTypeOfExpr _ _) _ = return ""
+typeName (CTypeOfType _ _) _ = return ""
 
-typeName _ _ = return $ ""
+typeName _ _ = return ""
 
 -- Translation from C back to C.  Needed because there's no good way to pretty
 -- print a function's return type (including pointers on the declarator) in
@@ -405,39 +397,39 @@ typeName _ _ = return $ ""
 
 cTypeName :: CTypeSpecifier a -> Signedness -> Output String
 
-cTypeName (CVoidType _) _   = return $ ""
-cTypeName (CFloatType _) _  = return $ "float"
-cTypeName (CDoubleType _) _ = return $ "double"
-cTypeName (CBoolType _) _   = return $ "int"
+cTypeName (CVoidType _) _   = return ""
+cTypeName (CFloatType _) _  = return "float"
+cTypeName (CDoubleType _) _ = return "double"
+cTypeName (CBoolType _) _   = return "int"
 
 cTypeName (CCharType _) s   = case s of
-                               Signed   -> return $ "signed char"
-                               Unsigned -> return $ "unsigned char"
-                               _        -> return $ "char"
+                               Signed   -> return "signed char"
+                               Unsigned -> return "unsigned char"
+                               _        -> return "char"
 cTypeName (CShortType _) s  = case s of
-                               Signed   -> return $ "signed short"
-                               Unsigned -> return $ "unsigned short"
-                               _        -> return $ "hort"
+                               Signed   -> return "signed short"
+                               Unsigned -> return "unsigned short"
+                               _        -> return "hort"
 cTypeName (CIntType _) s    = case s of
-                               Signed   -> return $ "signed int"
-                               Unsigned -> return $ "unsigned int"
-                               _        -> return $ "int"
+                               Signed   -> return "signed int"
+                               Unsigned -> return "unsigned int"
+                               _        -> return "int"
 cTypeName (CLongType _) s   = case s of
-                               Signed   -> return $ "signed long"
-                               Unsigned -> return $ "unsigned long"
-                               _        -> return $ "long"
+                               Signed   -> return "signed long"
+                               Unsigned -> return "unsigned long"
+                               _        -> return "long"
 
 cTypeName (CTypeDef (Ident name _ _) _) _ = do
   definition <- lookupType name
   return $ fromMaybe name definition
 
-cTypeName (CComplexType _) _  = return $ ""
-cTypeName (CSUType _ _) _     = return $ ""
-cTypeName (CEnumType _ _) _   = return $ ""
-cTypeName (CTypeOfExpr _ _) _ = return $ ""
-cTypeName (CTypeOfType _ _) _ = return $ ""
+cTypeName (CComplexType _) _  = return ""
+cTypeName (CSUType _ _) _     = return ""
+cTypeName (CEnumType _ _) _   = return ""
+cTypeName (CTypeOfExpr _ _) _ = return ""
+cTypeName (CTypeOfType _ _) _ = return ""
 
-cTypeName _ _ = return $ ""
+cTypeName _ _ = return ""
 
 -- parseFile "/usr/bin/gcc" ["-U__BLOCKS__", "/Users/johnw/src/hlibgit2/libgit2/include/git2/types.h"]
 
