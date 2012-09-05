@@ -1,14 +1,17 @@
+{-# LANGUAGE DeriveDataTypeable #-}
+
 module Main where
 
 import           Control.Applicative
 import           Control.Monad hiding (sequence)
 import           Control.Monad.Trans.State
 import           Data.Char
-import           Data.Foldable
-import           Data.List hiding (concat)
+import           Data.Foldable hiding (concat)
+import           Data.List
 import qualified Data.Map as M
 import           Data.Maybe
 import           Data.Traversable
+import           Debug.Trace
 import           Language.C.Data.Ident
 import           Language.C.Data.InputStream
 import           Language.C.Data.Node
@@ -19,6 +22,7 @@ import           Language.C.Syntax.AST
 import           Language.C.System.GCC
 import           Language.C.System.Preprocess
 import           Prelude hiding (concat, sequence)
+import           System.Console.CmdArgs
 import           System.Directory
 import           System.Environment
 import           System.FilePath
@@ -26,79 +30,130 @@ import           System.IO
 import           Text.PrettyPrint as P
 import           Text.StringTemplate
 
+version :: String
+version = "0.2.0"
+
+copyright :: String
+copyright = "2012"
+
+c2hscSummary :: String
+c2hscSummary = "c2hsc v" ++ version ++ ", (C) John Wiegley " ++ copyright
+
+data C2HscOptions = C2HscOptions
+    { gcc       :: FilePath
+    , cppopts   :: String
+    , prefix    :: String
+    , useStdout :: Bool
+    , verbose   :: Bool
+    , debug     :: Bool
+    , files     :: [FilePath] }
+    deriving (Data, Typeable, Show, Eq)
+
+c2hscOptions :: C2HscOptions
+c2hscOptions = C2HscOptions
+    { gcc       = def &= typFile
+                  &= help "Specify explicit path to gcc or cpp"
+    , cppopts   = def &= typ "OPTS"
+                  &= help "Pass OPTS to the preprocessor"
+    , prefix    = def &= typ "PREFIX"
+                  &= help "Use PREFIX when naming modules"
+    , useStdout = def &= name "stdout"
+                  &= help "Send all output to stdout (for testing)"
+    , verbose   = def &= name "v"
+                  &= help "Report progress verbosely"
+    , debug     = def &= name "D"
+                  &= help "Report debug information"
+    , files     = def &= args &= typFile } &=
+    summary c2hscSummary &=
+    program "c2hsc" &=
+    help "Create an .hsc Bindings-DSL file from a C API header file"
+
 ------------------------------ IMPURE FUNCTIONS ------------------------------
 
 -- Parsing of C headers begins with finding gcc so we can run the
 -- preprocessor.
 
 main :: IO ()
-main = do
-  gccExe <- findExecutable "gcc"
+main = getArgs >>= runArgs
+
+runArgs :: [String] -> IO()
+runArgs mainArgs = do
+  opts <- withArgs (if null mainArgs then ["--help"] else mainArgs)
+          (cmdArgs c2hscOptions)
+  when (prefix opts == "") $
+    error "Please specify a module prefix to use with --prefix"
+
+  gccExe <- findExecutable $ case gcc opts of "" -> "gcc"; x -> x
   case gccExe of
-    Nothing      -> error "Cannot find 'gcc' executable on the PATH"
-    Just gccPath -> getArgs >>= parseFile gccPath
+    Nothing      -> error $ "Cannot find executable '" ++ gcc opts ++ "'"
+    Just gccPath -> parseFile gccPath opts
 
 -- Once gcc is found, setup to parse the C file by running the preprocessor.
 -- Then, identify the input file absolutely so we know which declarations to
 -- print out at the end.
 
-parseFile :: FilePath -> [String] -> IO ()
-parseFile gccPath args = do
-  fileName <- canonicalizePath $ last args
-  result   <- runPreprocessor (newGCC gccPath)
-                              (rawCppArgs (tail . init $ args) fileName)
-  case result of
-    Left err     -> error $ "Failed to run cpp: " ++ show err
-    Right stream -> do
-      let HscOutput hscs helpercs _ =
-            execState (parseCFile stream fileName (initPos fileName))
-                      newHscState
-      writeProducts (head args) fileName hscs helpercs
+parseFile :: FilePath -> C2HscOptions -> IO ()
+parseFile gccPath opts =
+  for_ (files opts) $ \fileName -> do
+    result <- runPreprocessor (newGCC gccPath)
+                              (rawCppArgs (files opts) fileName)
+    case result of
+      Left err     -> error $ "Failed to run cpp: " ++ show err
+      Right stream -> do
+        let HscOutput hscs helpercs _ =
+              execState (parseCFile stream fileName (initPos fileName))
+                        newHscState
+        writeProducts opts fileName hscs helpercs
 
 -- Write out the gathered data
 
-writeProducts :: String -> FilePath -> [String] -> [String] -> IO ()
-writeProducts libName fileName hscs helpercs = do
+writeProducts :: C2HscOptions -> FilePath -> [String] -> [String] -> IO ()
+writeProducts opts fileName hscs helpercs = do
   let tmpl = unlines [ "#include <bindings.dsl.h>"
                      , "#include <git2.h>"
                      , "module $libName$.$cFileName$ where"
                      , "#strict_import"
                      , "" ]
-      vars = [ ("libName",   libName)
+      vars = [ ("libName",   prefix opts)
              , ("cFileName", cap) ]
       code = newSTMP tmpl
       base = dropExtension . takeFileName $ fileName
       cap  = capitalize base
 
   let target = cap ++ ".hsc"
-  handle <- openFile target WriteMode
+  handle <- if useStdout opts
+            then return System.IO.stdout
+            else openFile target WriteMode
 
   hPutStrLn handle $ toString $ setManyAttrib vars code
 
   -- Sniff through the file again, but looking only for local #include's
   contents <- readFile fileName
-  let includes = filter ("#include \"" `isPrefixOf`) (lines contents)
-
+  let includes = filter ("#include \"" `isPrefixOf`) . lines $ contents
   for_ includes $ \inc ->
     hPutStrLn handle $ "import "
-                    ++ libName ++ "."
+                    ++ prefix opts ++ "."
                     ++ (capitalize . takeWhile (/= '.') . drop 10 $ inc)
 
   traverse_ (hPutStrLn handle) hscs
 
-  hClose handle
+  unless (useStdout opts) $
+    hClose handle
   putStrLn $ "Wrote " ++ target
 
   when (length helpercs > 0) $ do
     let targetc = cap ++ ".hsc.helper.c"
-    handlec <- openFile targetc WriteMode
+    handlec <- if useStdout opts
+               then openFile targetc WriteMode
+               else return System.IO.stdout
 
     hPutStrLn handlec "#include <bindings.cmacros.h>"
     traverse_ (hPutStrLn handlec) includes
     hPutStrLn handlec ""
     traverse_ (hPutStrLn handlec) helpercs
 
-    hClose handlec
+    unless (useStdout opts) $
+      hClose handlec
     putStrLn $ "Wrote " ++ targetc
 
   where capitalize [] = []
@@ -150,13 +205,13 @@ parseCFile stream fileName pos =
   case parseC stream pos of
     Left err -> error $ "Failed to compile: " ++ show err
     Right (CTranslUnit decls _) -> generateHsc decls
-
   where
     generateHsc :: [CExtDecl] -> Output ()
     generateHsc = traverse_ (appendNode fileName)
 
 declInFile :: FilePath -> CExtDecl -> Bool
-declInFile fileName = (fileName ==) . infoFile . declInfo
+declInFile fileName =
+  (takeFileName fileName ==) . takeFileName . infoFile . declInfo
 
 infoFile :: NodeInfo -> String
 infoFile = posFile . posOfNode
@@ -182,7 +237,7 @@ appendNode :: FilePath -> CExtDecl -> Output ()
 
 appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) =
   for_ items $ \(declrtr, _, _) ->
-    for_ (splitDecl declrtr) $ \(d, ddrs, name) ->
+    for_ (splitDecl declrtr) $ \(d, ddrs, nm) ->
       case ddrs of
         CFunDeclr (Right (_, _)) _ _ : _ ->
           when (declInFile fp dx) $
@@ -191,7 +246,7 @@ appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) =
         _ -> do
           when (declInFile fp dx) $ do
             appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
-            appendType declSpecs name
+            appendType declSpecs nm
 
           -- If the type is a typedef, record the equivalence so we can look
           -- it up later
@@ -203,14 +258,14 @@ appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) =
               dname <- declSpecTypeName declSpecs
               case dname of
                 "" -> return ()
-                _  -> defineType name dname
+                _  -> defineType nm dname
             _ -> return ()
 
   where splitDecl declrtr = do
           -- Take advantage of the Maybe monad to save us some effort
           d@(CDeclr ident ddrs _ _ _) <- declrtr
-          (Ident name _ _)            <- ident
-          return (d, ddrs, name)
+          (Ident nm _ _)            <- ident
+          return (d, ddrs, nm)
 
 appendNode fp dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
   -- Assume functions defined in headers are inline functions
@@ -219,7 +274,7 @@ appendNode fp dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
 
     case declrtr of
       (CDeclr ident ddrs _ _ _) ->
-        for_ ident $ \(Ident name _ _) ->
+        for_ ident $ \(Ident nm _ _) ->
           case head ddrs of
             (CFunDeclr (Right (decls, _)) _ _) -> do
               let argsList =
@@ -227,10 +282,10 @@ appendNode fp dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
               retType <- derDeclrTypeName' True declSpecs (tail ddrs)
               if retType /= ""
                 then appendHelper $ "BC_INLINE" ++ show (length decls)
-                                 ++ "(" ++ name ++ ", " ++ argsList
+                                 ++ "(" ++ nm ++ ", " ++ argsList
                                  ++ ", " ++ retType ++ ")"
                 else appendHelper $ "BC_INLINE" ++ show (length decls)
-                                 ++ "VOID(" ++ name ++ ", " ++ argsList ++ ")"
+                                 ++ "VOID(" ++ nm ++ ", " ++ argsList ++ ")"
             _ -> return ()
 
 appendNode _ (CAsmExt _ _) = return ()
@@ -242,16 +297,16 @@ appendNode _ (CAsmExt _ _) = return ()
 appendFunc :: String -> [CDeclarationSpecifier a] -> CDeclarator a -> Output ()
 appendFunc marker declSpecs (CDeclr ident ddrs _ _ _) = do
   retType  <- derDeclrTypeName declSpecs (tail ddrs)
-  argTypes <- sequence $ getArgTypes (head ddrs)
+  argTypes <- (++) <$> (filter (/= "") <$> (sequence $ getArgTypes (head ddrs)))
+                   <*> pure [ "IO (" ++ retType ++ ")" ]
 
   let name' = nameFromIdent ident
-      tmpl  = "$marker$ $name$ , $argTypes;separator=' -> '$$retType$"
+      tmpl  = "$marker$ $name$ , $argTypes;separator=' -> '$"
       code  = newSTMP tmpl
       -- I have to this separately since argTypes :: [String]
       code' = setAttribute "argTypes" argTypes code
       vars  = [ ("marker",  marker)
-              , ("name",    name')
-              , ("retType", " -> IO (" ++ retType ++ ")") ]
+              , ("name",    name') ]
 
   appendHsc $ toString $ setManyAttrib vars code'
 
@@ -261,7 +316,7 @@ appendFunc marker declSpecs (CDeclr ident ddrs _ _ _) = do
     getArgTypes _ = []
 
     nameFromIdent :: Maybe Ident -> String
-    nameFromIdent name = case name of
+    nameFromIdent nm = case nm of
       Just (Ident n _ _) -> n
       _ -> "<no name>"
 
@@ -286,14 +341,14 @@ appendType declSpecs declrName = traverse_ appendType' declSpecs
       appendHsc $ "#integral_t " ++ name'
 
       for_ defs $ \ds ->
-        for_ ds $ \(Ident name _ _, _) ->
-          appendHsc $ "#num " ++ name
+        for_ ds $ \(Ident nm _ _, _) ->
+          appendHsc $ "#num " ++ nm
 
     appendType' _ = return ()
 
     identName ident = case ident of
                         Nothing -> declrName
-                        Just (Ident name _ _) -> name
+                        Just (Ident nm _ _) -> nm
 
 -- The remainder of this file is some hairy code for turning various
 -- constructs into Bindings-DSL type names, such as turning "int ** foo" into
@@ -304,7 +359,7 @@ data Signedness = None | Signed | Unsigned deriving (Eq, Show, Enum)
 cdeclName :: CDeclaration a -> Maybe String
 cdeclName (CDecl _ more _) =
   case more of
-    (Just (CDeclr (Just (Ident name _ _)) _ _ _ _), _, _) : _ -> Just name
+    (Just (CDeclr (Just (Ident nm _ _)) _ _ _ _), _, _) : _ -> Just nm
     _ -> Nothing
 
 cdeclTypeName :: CDeclaration a -> Output String
@@ -325,8 +380,10 @@ derDeclrTypeName = derDeclrTypeName' False
 
 derDeclrTypeName' :: Bool -> [CDeclarationSpecifier a] -> [CDerivedDeclarator a]
                   -> Output String
-derDeclrTypeName' cStyle declSpecs ddrs =
-  applyPointers <$> fullTypeName' None declSpecs <*> pure ddrs
+derDeclrTypeName' cStyle declSpecs ddrs = do
+  nm <- fullTypeName' None declSpecs
+  applyDeclrs nm ddrs
+
   where
     fullTypeName' :: Signedness -> [CDeclarationSpecifier a] -> Output String
     fullTypeName' _ []     = return ""
@@ -337,19 +394,41 @@ derDeclrTypeName' cStyle declSpecs ddrs =
         CTypeSpec tspec           -> if cStyle
                                      then cTypeName tspec s
                                      else typeName tspec s
-        _                         -> fullTypeName' s xs
+        _ -> fullTypeName' s xs
 
-    applyPointers :: String -> [CDerivedDeclarator a] -> String
-    applyPointers baseType (CPtrDeclr _ _:[])
-      | cStyle         = if baseType == "" then "void *" else baseType ++ " *"
-      | baseType == "" = "Ptr ()"
-      | otherwise      = "Ptr " ++ baseType
+    concatM xs = concat <$> sequence xs
 
-    applyPointers baseType (CPtrDeclr _ _:xs)
-      | cStyle         = applyPointers baseType xs ++ " *"
-      | otherwise      = "Ptr (" ++ applyPointers baseType xs ++ ")"
+    applyDeclrs :: String -> [CDerivedDeclarator a] -> Output String
+    applyDeclrs baseType (CPtrDeclr _ _:[])
+      | cStyle && baseType == "" = return "void *"
+      | cStyle                  = return $ baseType ++ "*"
+      | baseType == ""          = return "Ptr ()"
+      | baseType == "CChar"     = return "CString"
+      | otherwise               = return $ "Ptr " ++ baseType
 
-    applyPointers baseType _ = baseType
+    applyDeclrs baseType (CPtrDeclr _ _:xs)
+      | cStyle    = concatM [ applyDeclrs baseType xs
+                            , pure " *" ]
+      | otherwise = concatM [ pure "Ptr ("
+                            , applyDeclrs baseType xs
+                            , pure ")" ]
+
+    applyDeclrs baseType (CArrDeclr {}:xs)
+      | cStyle    = concatM [ applyDeclrs baseType xs
+                            , pure "[]" ]
+      | otherwise = concatM [ pure "Ptr ("
+                            , applyDeclrs baseType xs
+                            , pure ")" ]
+
+    applyDeclrs _ (CFunDeclr (Right (decls, _)) _ _:_)
+      | cStyle    =
+        concatM . intersperse (pure ", ") . map cdeclTypeName $ decls
+      | otherwise =
+        concatM $ [ pure "FunPtr (" ]
+               ++ intersperse (pure " -> ") (map cdeclTypeName decls)
+               ++ [ pure ")" ]
+
+    applyDeclrs baseType _ = return baseType
 
 -- Simple translation from C types to Foreign.C.Types types.  We represent
 -- Void as the empty string so that returning void becomes IO (), and passing
@@ -379,9 +458,9 @@ typeName (CLongType _) s   = case s of
                                Unsigned -> return "CULong"
                                _        -> return "CLong"
 
-typeName (CTypeDef (Ident name _ _) _) _ = do
-  definition <- lookupType name
-  return $ fromMaybe ("<" ++ name ++ ">") definition
+typeName (CTypeDef (Ident nm _ _) _) _ = do
+  definition <- lookupType nm
+  return $ fromMaybe ("<" ++ nm ++ ">") definition
 
 typeName (CComplexType _) _  = return ""
 typeName (CSUType _ _) _     = return ""
@@ -419,9 +498,9 @@ cTypeName (CLongType _) s   = case s of
                                Unsigned -> return "unsigned long"
                                _        -> return "long"
 
-cTypeName (CTypeDef (Ident name _ _) _) _ = do
-  definition <- lookupType name
-  return $ fromMaybe name definition
+cTypeName (CTypeDef (Ident nm _ _) _) _ = do
+  definition <- lookupType nm
+  return $ fromMaybe nm definition
 
 cTypeName (CComplexType _) _  = return ""
 cTypeName (CSUType _ _) _     = return ""
@@ -431,6 +510,6 @@ cTypeName (CTypeOfType _ _) _ = return ""
 
 cTypeName _ _ = return ""
 
--- parseFile "/usr/bin/gcc" ["-U__BLOCKS__", "/Users/johnw/src/hlibgit2/libgit2/include/git2/types.h"]
+-- runArgs ["--prefix=C2Hsc.Smoke", "--cppopts=-U__BLOCKS__", "test/smoke.h"]
 
 -- c2hsc.hs
