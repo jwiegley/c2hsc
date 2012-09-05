@@ -76,6 +76,9 @@ c2hscOptions = C2HscOptions
 main :: IO ()
 main = getArgs >>= runArgs
 
+smokeTest :: IO ()
+smokeTest = runArgs ["--prefix=Test", "--stdout", "test/smoke.h"]
+
 runArgs :: [String] -> IO()
 runArgs mainArgs = do
   opts <- withArgs (if null mainArgs then ["--help"] else mainArgs)
@@ -96,7 +99,7 @@ parseFile :: FilePath -> C2HscOptions -> IO ()
 parseFile gccPath opts =
   for_ (files opts) $ \fileName -> do
     result <- runPreprocessor (newGCC gccPath)
-                              (rawCppArgs [(cppopts opts)] fileName)
+                              (rawCppArgs [cppopts opts] fileName)
     case result of
       Left err     -> error $ "Failed to run cpp: " ++ show err
       Right stream -> do
@@ -529,7 +532,5 @@ cTypeName (CTypeOfExpr _ _) _ = return ""
 cTypeName (CTypeOfType _ _) _ = return ""
 
 cTypeName _ _ = return ""
-
--- runArgs ["--prefix=C2Hsc.Smoke", "--cppopts=-U__BLOCKS__", "test/smoke.h"]
 
 -- c2hsc.hs
