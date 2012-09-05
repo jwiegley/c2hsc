@@ -11,6 +11,7 @@ For example, in `hlibgit2` on the Mac I'm using:
 
 Known issues:
 
+ - Filename matching is not accurate enough
  - Pointers to "struct foo" are being rendered as Ptr () [void *]
  - Function pointers of void return type are rendered incorrectlyb
  - `const` is being dropped from BC_INLINE macros
