@@ -435,15 +435,13 @@ applyDeclrs cStyle baseType (p@CPtrDeclr {}:f@CFunDeclr {}:ds)
                                           <*> pure (f:ds)
 
 applyDeclrs cStyle baseType (CFunDeclr (Right (decls, _)) _ _:_)
-  | cStyle = do
-    let declNames = sequence $
-                    map (cdeclTypeName' cStyle) decls ++ [pure baseType]
-    intercalate ", " <$> (filter (/= "") <$> declNames)
+  | cStyle    = renderList ", " (funTypes decls baseType)
+  | otherwise = do argTypes <- renderList " -> " (funTypes decls baseType)
+                   return $ "FunPtr (" ++ argTypes ++ ")"
 
-  | otherwise = do
-    let declNames = sequence $ map cdeclTypeName decls ++ [pure baseType]
-    argTypes <- intercalate " -> " <$> (filter (/= "") <$> declNames)
-    return $ "FunPtr (" ++ argTypes ++ ")"
+  where renderList str xs = intercalate str . filter (not . null) <$> xs
+        funTypes xs bt    = sequence $
+                            map (cdeclTypeName' cStyle) xs ++ [pure bt]
 
 applyDeclrs cStyle baseType (CPtrDeclr _ _:[])
   | cStyle && baseType == "" = return "void *"
