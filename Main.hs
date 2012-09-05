@@ -211,10 +211,7 @@ parseCFile stream fileName pos =
 
 declInFile :: FilePath -> CExtDecl -> Bool
 declInFile fileName =
-  (takeFileName fileName ==) . takeFileName . infoFile . declInfo
-
-infoFile :: NodeInfo -> String
-infoFile = posFile . posOfNode
+  (== takeFileName fileName) . takeFileName . posFile . posOfNode . declInfo
 
 declInfo :: CExtDecl -> NodeInfo
 declInfo (CDeclExt (CDecl _ _ info))       = info
@@ -363,16 +360,27 @@ cdeclName (CDecl _ more _) =
     _ -> Nothing
 
 cdeclTypeName :: CDeclaration a -> Output String
-cdeclTypeName (CDecl declSpecs more _) =
+cdeclTypeName = cdeclTypeName' False
+
+cdeclTypeName' :: Bool -> CDeclaration a -> Output String
+cdeclTypeName' cStyle (CDecl declSpecs more _) =
   case more of
-    (Just x, _, _) : _ -> declrTypeName declSpecs x
-    _                  -> declSpecTypeName declSpecs
+    (Just x, _, _) : _ -> declrTypeName' cStyle declSpecs x
+    _                  -> declSpecTypeName' cStyle declSpecs
 
 declSpecTypeName :: [CDeclarationSpecifier a] -> Output String
-declSpecTypeName = flip derDeclrTypeName []
+declSpecTypeName = declSpecTypeName' False
+
+declSpecTypeName' :: Bool -> [CDeclarationSpecifier a] -> Output String
+declSpecTypeName' cStyle = flip (derDeclrTypeName' cStyle) []
 
 declrTypeName :: [CDeclarationSpecifier a] -> CDeclarator a -> Output String
-declrTypeName declSpecs (CDeclr _ ddrs _ _ _) = derDeclrTypeName declSpecs ddrs
+declrTypeName = declrTypeName' False
+
+declrTypeName' :: Bool -> [CDeclarationSpecifier a] -> CDeclarator a
+               -> Output String
+declrTypeName' cStyle declSpecs (CDeclr _ ddrs _ _ _) =
+  derDeclrTypeName' cStyle declSpecs ddrs
 
 derDeclrTypeName :: [CDeclarationSpecifier a] -> [CDerivedDeclarator a]
                  -> Output String
@@ -386,7 +394,13 @@ derDeclrTypeName' cStyle declSpecs ddrs = do
 
   where
     fullTypeName' :: Signedness -> [CDeclarationSpecifier a] -> Output String
-    fullTypeName' _ []     = return ""
+    fullTypeName' _ [] = return ""
+
+    fullTypeName' _ (CTypeSpec (CSignedType _):[]) =
+      if cStyle then return "signed" else return "CInt"
+    fullTypeName' _ (CTypeSpec (CUnsigType _):[]) =
+      if cStyle then return "unsigned" else return "CUInt"
+
     fullTypeName' s (x:xs) =
       case x of
         CTypeSpec (CSignedType _) -> fullTypeName' Signed xs
@@ -399,6 +413,23 @@ derDeclrTypeName' cStyle declSpecs ddrs = do
     concatM xs = concat <$> sequence xs
 
     applyDeclrs :: String -> [CDerivedDeclarator a] -> Output String
+
+    applyDeclrs baseType (p@CPtrDeclr {}:f@CFunDeclr {}:ds)
+      | cStyle    = applyDeclrs (baseType ++ " *") (f:ds)
+      | otherwise = join $ applyDeclrs <$> applyDeclrs baseType [p]
+                                       <*> pure (f:ds)
+
+    applyDeclrs baseType (CFunDeclr (Right (decls, _)) _ _:_)
+      | cStyle = do
+        let declNames = sequence $
+                        map (cdeclTypeName' cStyle) decls ++ [pure baseType]
+        intercalate ", " <$> (filter (/= "") <$> declNames)
+
+      | otherwise = do
+        let declNames = sequence $ map cdeclTypeName decls ++ [pure baseType]
+        argTypes <- intercalate " -> " <$> (filter (/= "") <$> declNames)
+        return $ "FunPtr (" ++ argTypes ++ ")"
+
     applyDeclrs baseType (CPtrDeclr _ _:[])
       | cStyle && baseType == "" = return "void *"
       | cStyle                  = return $ baseType ++ "*"
@@ -419,14 +450,6 @@ derDeclrTypeName' cStyle declSpecs ddrs = do
       | otherwise = concatM [ pure "Ptr ("
                             , applyDeclrs baseType xs
                             , pure ")" ]
-
-    applyDeclrs _ (CFunDeclr (Right (decls, _)) _ _:_)
-      | cStyle    =
-        concatM . intersperse (pure ", ") . map cdeclTypeName $ decls
-      | otherwise =
-        concatM $ [ pure "FunPtr (" ]
-               ++ intersperse (pure " -> ") (map cdeclTypeName decls)
-               ++ [ pure ")" ]
 
     applyDeclrs baseType _ = return baseType
 
