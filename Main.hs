@@ -11,7 +11,7 @@ import           Data.List
 import qualified Data.Map as M
 import           Data.Maybe
 import           Data.Traversable
-import           Debug.Trace
+--import           Debug.Trace
 import           Language.C.Data.Ident
 import           Language.C.Data.InputStream
 import           Language.C.Data.Node
@@ -294,7 +294,7 @@ appendNode _ (CAsmExt _ _) = return ()
 appendFunc :: String -> [CDeclarationSpecifier a] -> CDeclarator a -> Output ()
 appendFunc marker declSpecs (CDeclr ident ddrs _ _ _) = do
   retType  <- derDeclrTypeName declSpecs (tail ddrs)
-  argTypes <- (++) <$> (filter (/= "") <$> (sequence $ getArgTypes (head ddrs)))
+  argTypes <- (++) <$> (filter (/= "") <$> sequence (getArgTypes (head ddrs)))
                    <*> pure [ "IO (" ++ retType ++ ")" ]
 
   let name' = nameFromIdent ident
