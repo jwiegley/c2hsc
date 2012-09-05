@@ -34,7 +34,10 @@ struct bar1_t {
   char   c;
   char * d;
   char * (*e)(void);
-  char * (*f)(int);
+  void   (*f)(void *);
+  char   g[2];
+
+  struct bar1_t * h;
 };
 
 typedef struct bar2_t {
@@ -64,5 +67,11 @@ enum baz3_t {
 typedef enum baz4_t {
   BAZ4 = 1
 } baz4_t;
+
+/******************************************************************************
+ * Global variables                                                           *
+ ******************************************************************************/
+
+extern int global;
 
 /* smoke.h ends here */

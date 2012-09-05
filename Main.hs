@@ -11,7 +11,6 @@ import           Data.List
 import qualified Data.Map as M
 import           Data.Maybe
 import           Data.Traversable
---import           Debug.Trace
 import           Language.C.Data.Ident
 import           Language.C.Data.InputStream
 import           Language.C.Data.Node
@@ -157,8 +156,14 @@ writeProducts opts fileName hscs helpercs = do
     unless (useStdout opts) $ hClose handlec
     putStrLn $ "Wrote " ++ targetc
 
-  where capitalize [] = []
-        capitalize (x:xs) = toTitle x : xs
+capitalize :: String -> String
+capitalize [] = []
+capitalize (x:xs) = toTitle x : camelCase xs
+
+camelCase :: String -> String
+camelCase [] = []
+camelCase ('_':xs) = capitalize xs
+camelCase (x:xs) = x : camelCase xs
 
 ------------------------------- PURE FUNCTIONS -------------------------------
 
@@ -233,37 +238,41 @@ declInfo (CAsmExt _ info)                  = info
 
 appendNode :: FilePath -> CExtDecl -> Output ()
 
-appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) =
-  for_ items $ \(declrtr, _, _) ->
-    for_ (splitDecl declrtr) $ \(d, ddrs, nm) ->
-      case ddrs of
-        CFunDeclr (Right (_, _)) _ _ : _ ->
-          when (declInFile fp dx) $
-            appendFunc "#ccall" declSpecs d
+appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) = do
+  case items of
+    [] -> do
+      appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
+      appendType declSpecs ""
 
-        _ -> do
-          when (declInFile fp dx) $ do
-            appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
-            appendType declSpecs nm
+    _ ->
+      for_ items $ \(declrtr, _, _) ->
+        for_ (splitDecl declrtr) $ \(d, ddrs, nm) ->
+          case ddrs of
+            CFunDeclr (Right (_, _)) _ _ : _ ->
+              when (declInFile fp dx) $
+                appendFunc "#ccall" declSpecs d
 
-          -- If the type is a typedef, record the equivalence so we can look
-          -- it up later
-          case head declSpecs of
-            CStorageSpec (CTypedef _) -> do
-              -- jww (2012-09-04): Types which are typedefs of functions
-              -- pointers are not working, since declSpecTypeName only gives
-              -- the function return type, not the function type
-              dname <- declSpecTypeName declSpecs
-              case dname of
-                "" -> return ()
-                _  -> defineType nm dname
-            _ -> return ()
+            _ -> do
+              when (declInFile fp dx) $ do
+                appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
+                appendType declSpecs nm
 
-  where splitDecl declrtr = do
-          -- Take advantage of the Maybe monad to save us some effort
+              -- If the type is a typedef, record the equivalence so we can
+              -- look it up later
+              case head declSpecs of
+                CStorageSpec (CTypedef _) -> do
+                  -- jww (2012-09-04): Types which are typedefs of functions
+                  -- pointers are not working, since declSpecTypeName only gives
+                  -- the function return type, not the function type
+                  dname <- declSpecTypeName declSpecs
+                  case dname of
+                    "" -> return ()
+                    _  -> defineType nm dname
+                _ -> return ()
+
+  where splitDecl declrtr = do  -- in the Maybe Monad
           d@(CDeclr ident ddrs _ _ _) <- declrtr
-          (Ident nm _ _)              <- ident
-          return (d, ddrs, nm)
+          return (d, ddrs, case ident of Just (Ident nm _ _) -> nm; _ -> "")
 
 appendNode fp dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
   -- Assume functions defined in headers are inline functions
@@ -328,8 +337,14 @@ appendType declSpecs declrName = traverse_ appendType' declSpecs
         appendHsc $ "#starttype " ++ name'
         for_ xs $ \x ->
           for_ (cdeclName x) $ \declName -> do
-            tname <- cdeclTypeName x
-            appendHsc $ "#field " ++ declName ++ " , " ++ tname
+            let (CDecl declSpecs' ((Just y, _, _):_) _) = x
+            case y of
+              (CDeclr _ (CArrDeclr {}:zs) _ _ _) -> do
+                tname <- derDeclrTypeName declSpecs' zs
+                appendHsc $ "#array_field " ++ declName ++ " , " ++ tname
+              _ -> do
+                tname <- cdeclTypeName x
+                appendHsc $ "#field " ++ declName ++ " , " ++ tname
         appendHsc "#stoptype"
 
     appendType' (CTypeSpec (CEnumType (CEnum ident defs _ _) _)) = do
