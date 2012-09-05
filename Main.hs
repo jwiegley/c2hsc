@@ -259,7 +259,7 @@ appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) =
   where splitDecl declrtr = do
           -- Take advantage of the Maybe monad to save us some effort
           d@(CDeclr ident ddrs _ _ _) <- declrtr
-          (Ident nm _ _)            <- ident
+          (Ident nm _ _)              <- ident
           return (d, ddrs, nm)
 
 appendNode fp dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
@@ -272,14 +272,13 @@ appendNode fp dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
     for_ ident $ \(Ident nm _ _) ->
       case head ddrs of
         (CFunDeclr (Right (decls, _)) _ _) -> do
-          let argsList = intercalate ", " . map (P.render . pretty) $ decls
           retType <- derDeclrTypeName' True declSpecs (tail ddrs)
+          funType <- applyDeclrs True retType ddrs
           if retType /= ""
             then appendHelper $ "BC_INLINE" ++ show (length decls)
-                             ++ "(" ++ nm ++ ", " ++ argsList
-                             ++ ", " ++ retType ++ ")"
+                             ++ "(" ++ nm ++ ", " ++ funType ++ ")"
             else appendHelper $ "BC_INLINE" ++ show (length decls)
-                             ++ "VOID(" ++ nm ++ ", " ++ argsList ++ ")"
+                             ++ "VOID(" ++ nm ++ ", " ++ funType ++ ")"
         _ -> return ()
 
 appendNode _ (CAsmExt _ _) = return ()
@@ -387,7 +386,7 @@ derDeclrTypeName' :: Bool -> [CDeclarationSpecifier a] -> [CDerivedDeclarator a]
                   -> Output String
 derDeclrTypeName' cStyle declSpecs ddrs = do
   nm <- fullTypeName' None declSpecs
-  applyDeclrs nm ddrs
+  applyDeclrs cStyle nm ddrs
 
   where
     fullTypeName' :: Signedness -> [CDeclarationSpecifier a] -> Output String
@@ -407,48 +406,49 @@ derDeclrTypeName' cStyle declSpecs ddrs = do
                                      else typeName tspec s
         _ -> fullTypeName' s xs
 
-    concatM xs = concat <$> sequence xs
+concatM :: (Monad f, Functor f) => [f [a]] -> f [a]
+concatM xs = concat <$> sequence xs
 
-    applyDeclrs :: String -> [CDerivedDeclarator a] -> Output String
+applyDeclrs :: Bool -> String -> [CDerivedDeclarator a] -> Output String
 
-    applyDeclrs baseType (p@CPtrDeclr {}:f@CFunDeclr {}:ds)
-      | cStyle    = applyDeclrs (baseType ++ " *") (f:ds)
-      | otherwise = join $ applyDeclrs <$> applyDeclrs baseType [p]
-                                       <*> pure (f:ds)
+applyDeclrs cStyle baseType (p@CPtrDeclr {}:f@CFunDeclr {}:ds)
+  | cStyle    = applyDeclrs cStyle (baseType ++ " *") (f:ds)
+  | otherwise = join $ applyDeclrs cStyle <$> applyDeclrs cStyle baseType [p]
+                                          <*> pure (f:ds)
 
-    applyDeclrs baseType (CFunDeclr (Right (decls, _)) _ _:_)
-      | cStyle = do
-        let declNames = sequence $
-                        map (cdeclTypeName' cStyle) decls ++ [pure baseType]
-        intercalate ", " <$> (filter (/= "") <$> declNames)
+applyDeclrs cStyle baseType (CFunDeclr (Right (decls, _)) _ _:_)
+  | cStyle = do
+    let declNames = sequence $
+                    map (cdeclTypeName' cStyle) decls ++ [pure baseType]
+    intercalate ", " <$> (filter (/= "") <$> declNames)
 
-      | otherwise = do
-        let declNames = sequence $ map cdeclTypeName decls ++ [pure baseType]
-        argTypes <- intercalate " -> " <$> (filter (/= "") <$> declNames)
-        return $ "FunPtr (" ++ argTypes ++ ")"
+  | otherwise = do
+    let declNames = sequence $ map cdeclTypeName decls ++ [pure baseType]
+    argTypes <- intercalate " -> " <$> (filter (/= "") <$> declNames)
+    return $ "FunPtr (" ++ argTypes ++ ")"
 
-    applyDeclrs baseType (CPtrDeclr _ _:[])
-      | cStyle && baseType == "" = return "void *"
-      | cStyle                  = return $ baseType ++ "*"
-      | baseType == ""          = return "Ptr ()"
-      | baseType == "CChar"     = return "CString"
-      | otherwise               = return $ "Ptr " ++ baseType
+applyDeclrs cStyle baseType (CPtrDeclr _ _:[])
+  | cStyle && baseType == "" = return "void *"
+  | cStyle                  = return $ baseType ++ "*"
+  | baseType == ""          = return "Ptr ()"
+  | baseType == "CChar"     = return "CString"
+  | otherwise               = return $ "Ptr " ++ baseType
 
-    applyDeclrs baseType (CPtrDeclr _ _:xs)
-      | cStyle    = concatM [ applyDeclrs baseType xs
-                            , pure " *" ]
-      | otherwise = concatM [ pure "Ptr ("
-                            , applyDeclrs baseType xs
-                            , pure ")" ]
+applyDeclrs cStyle baseType (CPtrDeclr _ _:xs)
+  | cStyle    = concatM [ applyDeclrs cStyle baseType xs
+                        , pure " *" ]
+  | otherwise = concatM [ pure "Ptr ("
+                        , applyDeclrs cStyle baseType xs
+                        , pure ")" ]
 
-    applyDeclrs baseType (CArrDeclr {}:xs)
-      | cStyle    = concatM [ applyDeclrs baseType xs
-                            , pure "[]" ]
-      | otherwise = concatM [ pure "Ptr ("
-                            , applyDeclrs baseType xs
-                            , pure ")" ]
+applyDeclrs cStyle baseType (CArrDeclr {}:xs)
+  | cStyle    = concatM [ applyDeclrs cStyle baseType xs
+                        , pure "[]" ]
+  | otherwise = concatM [ pure "Ptr ("
+                        , applyDeclrs cStyle baseType xs
+                        , pure ")" ]
 
-    applyDeclrs baseType _ = return baseType
+applyDeclrs _ baseType _ = return baseType
 
 -- Simple translation from C types to Foreign.C.Types types.  We represent
 -- Void as the empty string so that returning void becomes IO (), and passing

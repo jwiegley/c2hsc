@@ -12,16 +12,12 @@ For example, in `hlibgit2` on the Mac I'm using:
 Known issues:
 
  - Varargs functions do not translate
- - Regular "unsigned" does not translate
  - Arrays are not handled at all (use #array_field $name , $type)
  - Handle type synonyms
- - A function taking void shouldn't have any arguments
- - Encode const char * as CString
- - Encode function pointers using FunPtr
  - Unnamed enums are not being emitted
- - Array parameters, like char x[] are not converted
- - Inline helper generator is emitting function arg names
- - Inline helper generator outputs the wrong header name
+ - Inline helper generator outputs the wrong headers
+ - Files named foo_bar should become FooBar
+ - Global variables are not being emitted
 
 Also, please note that this tool will never be 100% accurate.  It cannot
 translate macros, or anything related to the preprocessor, for example.  It
