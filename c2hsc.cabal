@@ -1,6 +1,6 @@
 Name: c2hsc
 
-Version:  0.4.0
+Version:  0.5.0
 Synopsis: Convert C API header files to .hsc and .hsc.helper.c files
 
 Description: Convert C API header files to .hsc and .hsc.helper.c files
@@ -30,6 +30,7 @@ Executable c2hsc
                , pretty          >= 1.1
                , filepath        >= 1.3
                , cmdargs         >= 0.9
+               , split           >= 0.2
 
 --Test-suite smoke
 --  Type: exitcode-stdio-1.0

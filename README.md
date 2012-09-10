@@ -12,13 +12,7 @@ For example, in `hlibgit2` on the Mac I'm using:
 
 Known issues:
 
- - Filename matching is not accurate enough
- - Pointers to "struct foo" are being rendered as Ptr () [void *]
- - Function pointers of void return type are rendered incorrectly
- - Handle type synonyms (output them as type a = b)
- - Global variables are not being emitted
  - Varargs functions do not translate
- - Inline helper generator outputs the wrong headers
 
 Also, please note that this tool will never be 100% accurate.  It cannot
 translate macros, or anything related to the preprocessor, for example.  It

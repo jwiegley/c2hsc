@@ -4,40 +4,51 @@ typedef unsigned int uint;
  * Functions                                                                  *
  ******************************************************************************/
 
-void   foo1(void);
-void   foo2(int);
-void   foo3(int, int);
-int    foo4(void);
-char   foo5(int);
-char * foo6(int, int);
-char * foo7(char *);
-char * foo8(char * b);
-char * foo9(char * (*b)(void));
-char * foo10(char * (*b)(int));
-char * foo11(char []);
-char * foo12(char b[]);
-char * foo13(char b[5]);
-char * foo14(int);
-int    foo15(char ***);
-int    foo16(unsigned);
-int    foo17(unsigned int);
-int    foo18(uint);
-int    foo19(int (*)(int));
+void    foo1(void);
+void    foo2(int);
+void    foo3(int, int);
+int     foo4(void);
+char    foo5(int);
+char *  foo6(int, int);
+char *  foo7(char *);
+char *  foo8(char * b);
+char *  foo9(char * (*b)(void));
+char *  foo10(char * (*b)(int));
+void *  foo11(void * (*b)(void));
+void *  foo12(void * (*b)(int));
+char *  foo13(char []);
+char *  foo14(char b[]);
+char *  foo15(char b[5]);
+char *  foo16(int);
+int     foo17(char ***);
+int     foo18(unsigned);
+int     foo19(unsigned int);
+int     foo20(uint);
+int     foo21(int (*)(int));
+int     foo22(int *(*)(int));
+int     foo23(int **(*)(int));
+int     foo24(int ***(*)(int));
+int *   foo25(int);
+int **  foo26(int);
+int *** foo27(int);
 
 /******************************************************************************
  * Structs                                                                    *
  ******************************************************************************/
 
 struct bar1_t {
-  void * a;
-  int    b;
-  char   c;
-  char * d;
-  char * (*e)(void);
-  void   (*f)(void *);
-  char   g[2];
+  void *  a;
+  int     b;
+  char    c;
+  char *  d;
+  char *  (*e)(void);
+  void    (*f)(void *);
+  int *   (*g)(void *);
+  int **  (*h)(void *);
+  int *** (*i)(void *);
+  char    j[2];
 
-  struct bar1_t * h;
+  struct bar1_t * k;
 };
 
 typedef struct bar2_t {
