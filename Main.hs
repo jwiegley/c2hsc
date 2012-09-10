@@ -102,8 +102,9 @@ parseFile gccPath opts =
     case result of
       Left err     -> error $ "Failed to run cpp: " ++ show err
       Right stream -> do
-        let HscOutput hscs helpercs _ =
-              execState (parseCFile stream fileName (initPos fileName))
+        let pos = initPos fileName
+            HscOutput hscs helpercs _ =
+              execState (parseCFile stream (posFile pos) pos)
                         newHscState
         writeProducts opts fileName hscs helpercs
 
@@ -216,8 +217,7 @@ parseCFile stream fileName pos =
     generateHsc = traverse_ (appendNode fileName)
 
 declInFile :: FilePath -> CExtDecl -> Bool
-declInFile fileName =
-  (== takeFileName fileName) . takeFileName . posFile . posOfNode . declInfo
+declInFile fileName = (== fileName) . posFile . posOfNode . declInfo
 
 declInfo :: CExtDecl -> NodeInfo
 declInfo (CDeclExt (CDecl _ _ info))       = info
@@ -240,9 +240,10 @@ appendNode :: FilePath -> CExtDecl -> Output ()
 
 appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) = do
   case items of
-    [] -> do
-      appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
-      appendType declSpecs ""
+    [] ->
+      when (declInFile fp dx) $ do
+        appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
+        appendType declSpecs ""
 
     _ ->
       for_ items $ \(declrtr, _, _) ->
@@ -269,10 +270,10 @@ appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) = do
                     "" -> return ()
                     _  -> defineType nm dname
                 _ -> return ()
-
-  where splitDecl declrtr = do  -- in the Maybe Monad
-          d@(CDeclr ident ddrs _ _ _) <- declrtr
-          return (d, ddrs, case ident of Just (Ident nm _ _) -> nm; _ -> "")
+  where
+    splitDecl declrtr = do      -- in the Maybe Monad
+      d@(CDeclr ident ddrs _ _ _) <- declrtr
+      return (d, ddrs, case ident of Just (Ident nm _ _) -> nm; _ -> "")
 
 appendNode fp dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
   -- Assume functions defined in headers are inline functions
