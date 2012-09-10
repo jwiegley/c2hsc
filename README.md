@@ -14,8 +14,7 @@ Known issues:
 
  - Filename matching is not accurate enough
  - Pointers to "struct foo" are being rendered as Ptr () [void *]
- - Function pointers of void return type are rendered incorrectlyb
- - `const` is being dropped from BC_INLINE macros
+ - Function pointers of void return type are rendered incorrectly
  - Handle type synonyms (output them as type a = b)
  - Global variables are not being emitted
  - Varargs functions do not translate

@@ -410,6 +410,14 @@ derDeclrTypeName' cStyle declSpecs ddrs = do
     fullTypeName' :: Signedness -> [CDeclarationSpecifier a] -> Output String
     fullTypeName' _ [] = return ""
 
+    fullTypeName' s (CTypeQual qual:xs) =
+      if cStyle
+      then do
+        baseType <- fullTypeName' s xs
+        return $ qualToStr qual ++ " " ++ baseType
+      else
+        fullTypeName' s xs
+
     fullTypeName' _ (CTypeSpec (CSignedType _):[]) =
       if cStyle then return "signed" else return "CInt"
     fullTypeName' _ (CTypeSpec (CUnsigType _):[]) =
@@ -443,28 +451,55 @@ applyDeclrs cStyle baseType (CFunDeclr (Right (decls, _)) _ _:_)
         funTypes xs bt    = sequence $
                             map (cdeclTypeName' cStyle) xs ++ [pure bt]
 
-applyDeclrs cStyle baseType (CPtrDeclr _ _:[])
-  | cStyle && baseType == "" = return "void *"
-  | cStyle                  = return $ baseType ++ "*"
+applyDeclrs cStyle baseType decl@(CPtrDeclr quals _:[])
+  | cStyle && baseType == "" = applyDeclrs cStyle "void" decl
+  | cStyle                  = return $ baseType ++ " *"
+                                    ++ preQualsToString quals
   | baseType == ""          = return "Ptr ()"
   | baseType == "CChar"     = return "CString"
   | otherwise               = return $ "Ptr " ++ baseType
 
-applyDeclrs cStyle baseType (CPtrDeclr _ _:xs)
+applyDeclrs cStyle baseType (CPtrDeclr quals _:xs)
   | cStyle    = concatM [ applyDeclrs cStyle baseType xs
-                        , pure " *" ]
+                        , pure " *"
+                        , pure (preQualsToString quals) ]
   | otherwise = concatM [ pure "Ptr ("
                         , applyDeclrs cStyle baseType xs
                         , pure ")" ]
 
-applyDeclrs cStyle baseType (CArrDeclr {}:xs)
-  | cStyle    = concatM [ applyDeclrs cStyle baseType xs
+applyDeclrs cStyle baseType (CArrDeclr quals _ _:xs)
+  | cStyle    = concatM [ pure (sufQualsToString quals)
+                        , applyDeclrs cStyle baseType xs
                         , pure "[]" ]
   | otherwise = concatM [ pure "Ptr ("
                         , applyDeclrs cStyle baseType xs
                         , pure ")" ]
 
 applyDeclrs _ baseType _ = return baseType
+
+prefixWith :: a -> [a] -> [a]
+prefixWith _ [] = []
+prefixWith x xs = (x:xs)
+
+preQualsToString :: [CTypeQualifier a] -> String
+preQualsToString = prefixWith ' ' . qualsToStr
+
+sufQualsToString :: [CTypeQualifier a] -> String
+sufQualsToString = prefixWith ' ' . qualsToStr
+
+suffixWith :: a -> [a] -> [a]
+suffixWith _ [] = []
+suffixWith x xs = xs ++ [x]
+
+qualsToStr :: [CTypeQualifier a] -> String
+qualsToStr = intercalate " " . map qualToStr
+
+qualToStr :: CTypeQualifier t -> String
+qualToStr (CConstQual _)  = "const"
+qualToStr (CVolatQual _)  = "volatile"
+qualToStr (CRestrQual _)  = "restricted"
+qualToStr (CInlineQual _) = ""
+qualToStr (CAttrQual _)   = error "Unimplemented: attribute qualifiers"
 
 -- Simple translation from C types to Foreign.C.Types types.  We represent
 -- Void as the empty string so that returning void becomes IO (), and passing

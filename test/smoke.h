@@ -74,4 +74,13 @@ typedef enum baz4_t {
 
 extern int global;
 
+/******************************************************************************
+ * Inline functions                                                           *
+ ******************************************************************************/
+
+inline int inline_foo(int a, int * b, const int c, const int * d,
+                      const int ** e, const int * const * f) {
+  return 10;
+}
+
 /* smoke.h ends here */
