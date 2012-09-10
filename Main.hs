@@ -83,7 +83,7 @@ runArgs :: [String] -> IO()
 runArgs mainArgs = do
   opts <- withArgs (if null mainArgs then ["--help"] else mainArgs)
           (cmdArgs c2hscOptions)
-  when (prefix opts == "") $
+  when (null (prefix opts)) $
     error "Please specify a module prefix to use with --prefix"
 
   gccExe <- findExecutable $ case gcc opts of "" -> "gcc"; x -> x
@@ -255,28 +255,26 @@ appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) = do
               when (declInFile fp dx) $
                 appendFunc "#ccall" declSpecs declrtr'
 
-            [] ->
-              when (declInFile fp dx) $ do
-                dname <- declSpecTypeName declSpecs
-                appendHsc $ "#globalvar " ++ nm ++ " , " ++ dname
-
             _ -> do
-              when (declInFile fp dx) $ do
-                appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
-                appendType declSpecs nm
-
               -- If the type is a typedef, record the equivalence so we can
               -- look it up later
               case declSpecs of
                 CStorageSpec (CTypedef _):_ -> do
+                  when (declInFile fp dx) $ do
+                    appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
+                    appendType declSpecs nm
+
                   dname <- declSpecTypeName declSpecs
-                  unless (dname == "" || dname == "<" ++ nm ++ ">") $ do
+                  unless (null dname || dname == "<" ++ nm ++ ">") $ do
                     when (declInFile fp dx) $
                       appendHsc $ "#synonym_t " ++ nm ++ " , " ++ dname
 
                     defineType nm dname
 
-                _ -> return ()
+                _ ->
+                  when (declInFile fp dx) $ do
+                    dname <- declSpecTypeName declSpecs
+                    appendHsc $ "#globalvar " ++ nm ++ " , " ++ dname
   where
     splitDecl declrtr = do      -- in the Maybe Monad
       d@(CDeclr ident ddrs _ _ _) <- declrtr
@@ -294,7 +292,7 @@ appendNode fp dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
         CFunDeclr (Right (decls, _)) _ _ -> do
           retType <- derDeclrTypeName' True declSpecs (tail ddrs)
           funType <- applyDeclrs True retType ddrs
-          if retType /= ""
+          if not (null retType)
             then appendHelper $ "BC_INLINE" ++ show (length decls)
                              ++ "(" ++ nm ++ ", " ++ funType ++ ")"
             else appendHelper $ "BC_INLINE" ++ show (length decls)
