@@ -28,10 +28,11 @@ import           System.Environment
 import           System.FilePath
 import           System.IO
 import           Text.PrettyPrint as P
+import           Text.Regex.Posix
 import           Text.StringTemplate
 
 version :: String
-version = "0.2.0"
+version = "0.5.1"
 
 copyright :: String
 copyright = "2012"
