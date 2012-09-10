@@ -28,7 +28,6 @@ import           System.Environment
 import           System.FilePath
 import           System.IO
 import           Text.PrettyPrint as P
-import           Text.Regex.Posix
 import           Text.StringTemplate
 
 version :: String
