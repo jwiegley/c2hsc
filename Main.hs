@@ -128,11 +128,11 @@ overrideType cName ffiName =
   defineType cName Typedef { typedefName     = ffiName
                            , typedefOverride = True }
 
-defaultOverrides :: Output [()]
-defaultOverrides = mapM (uncurry overrideType)
-                        [ ("size_t",    "CSize")
-                        , ("intptr_t",  "IntPtr")
-                        , ("uintptr_t", "WordPtr") ]
+defaultOverrides :: Output ()
+defaultOverrides = mapM_ (uncurry overrideType)
+                         [ ("size_t",    "CSize")
+                         , ("intptr_t",  "IntPtr")
+                         , ("uintptr_t", "WordPtr") ]
 
 -- Write out the gathered data
 
