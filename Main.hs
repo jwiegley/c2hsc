@@ -31,7 +31,7 @@ import           Text.PrettyPrint as P
 import           Text.StringTemplate
 
 version :: String
-version = "0.5.1"
+version = "0.6.0"
 
 copyright :: String
 copyright = "2012"
@@ -115,7 +115,6 @@ writeProducts :: C2HscOptions -> FilePath -> [String] -> [String] -> IO ()
 writeProducts opts fileName hscs helpercs = do
   let code   = newSTMP $
                unlines [ "#include <bindings.dsl.h>"
-                       , "#include <git2.h>"
                        , "module $libName$.$cFileName$ where"
                        , "#strict_import"
                        , "" ]
@@ -176,7 +175,9 @@ camelCase (x:xs)   = x : camelCase xs
 -- pure, and since the data sets involved are relatively small, performance is
 -- not a critical issue.
 
-type TypeMap   = M.Map String String
+data Typedef = Typedef { typedefName     :: String
+                       , typedefOverride :: Bool }
+type TypeMap   = M.Map String Typedef
 data HscOutput = HscOutput [String] [String] TypeMap
 type Output    = State HscOutput
 
@@ -193,12 +194,15 @@ appendHelper helperc = do
   HscOutput xs helpercs types <- get
   put $ HscOutput xs (helpercs ++ [helperc]) types
 
-defineType :: String -> String -> Output ()
+defineType :: String -> Typedef -> Output ()
 defineType key value = do
   HscOutput xs ys types <- get
-  put $ HscOutput xs ys (M.insert key value types)
+  hasOverride <- fmap typedefOverride <$> lookupType key
+  case hasOverride of
+    Just True -> return ()
+    _         -> put $ HscOutput xs ys (M.insert key value types)
 
-lookupType :: String -> Output (Maybe String)
+lookupType :: String -> Output (Maybe Typedef)
 lookupType key = do
   HscOutput _ _ types <- get
   return $ M.lookup key types
@@ -210,7 +214,12 @@ lookupType key = do
 -- Bindings-DSL format.
 
 parseCFile :: InputStream -> FilePath -> Position -> Output ()
-parseCFile stream fileName pos =
+parseCFile stream fileName pos = do
+  for_ [ ("size_t", "CSize")
+       , ("intptr_t", "IntPtr")
+       , ("uintptr_t", "WordPtr") ] $ \(cName, ffiName) ->
+    defineType cName $ Typedef { typedefName     = ffiName
+                               , typedefOverride = True }
   case parseC stream pos of
     Left err -> error $ "Failed to compile: " ++ show err
     Right (CTranslUnit decls _) -> generateHsc decls
@@ -269,8 +278,8 @@ appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) = do
                     when (declInFile fp dx) $
                       appendHsc $ "#synonym_t " ++ nm ++ " , " ++ dname
 
-                    defineType nm dname
-
+                    defineType nm $ Typedef { typedefName     = dname
+                                            , typedefOverride = False }
                 _ ->
                   when (declInFile fp dx) $ do
                     dname <- declSpecTypeName declSpecs
@@ -541,7 +550,10 @@ typeName (CLongType _) s   = case s of
 
 typeName (CTypeDef (Ident nm _ _) _) _ = do
   definition <- lookupType nm
-  return $ fromMaybe ("<" ++ nm ++ ">") definition
+  case definition of
+    Nothing -> return $ "<" ++ nm ++ ">"
+    Just (Typedef { typedefName = defNm }) ->
+      return defNm
 
 typeName (CSUType (CStruct _ (Just (Ident nm _ _)) _ _ _) _) _ =
   return $ "<" ++ nm ++ ">"
@@ -584,7 +596,12 @@ cTypeName (CLongType _) s   = case s of
 
 cTypeName (CTypeDef (Ident nm _ _) _) _ = do
   definition <- lookupType nm
-  return $ fromMaybe nm definition
+  case definition of
+    Nothing -> return nm
+    Just (Typedef { typedefOverride = True }) ->
+      return nm
+    Just (Typedef { typedefName = defNm, typedefOverride = False }) ->
+      return defNm
 
 cTypeName (CComplexType _) _  = return ""
 cTypeName (CSUType _ _) _     = return ""

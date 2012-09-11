@@ -1,4 +1,5 @@
 typedef unsigned int uint;
+typedef unsigned long size_t;
 
 /******************************************************************************
  * Functions                                                                  *
@@ -31,6 +32,7 @@ int     foo24(int ***(*)(int));
 int *   foo25(int);
 int **  foo26(int);
 int *** foo27(int);
+int *** foo28(size_t);
 
 /******************************************************************************
  * Structs                                                                    *
@@ -90,7 +92,7 @@ extern int global;
  ******************************************************************************/
 
 inline int inline_foo(int a, int * b, const int c, const int * d,
-                      const int ** e, const int * const * f) {
+                      const int ** e, const int * const * f, size_t g) {
   return 10;
 }
 
