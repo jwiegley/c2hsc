@@ -7,11 +7,11 @@ import           Control.Monad hiding (sequence)
 import           Control.Monad.Trans.State
 import           Data.Char
 import           Data.Foldable hiding (concat)
-import           Data.List
+import           Data.List as L
 import           Data.List.Split
 import qualified Data.Map as M
 import           Data.Maybe
-import           Data.Traversable hiding (mapM)
+import           Data.Traversable hiding (mapM, forM)
 import           Language.C.Data.Ident
 import           Language.C.Data.InputStream
 import           Language.C.Data.Node
@@ -21,7 +21,7 @@ import           Language.C.Pretty
 import           Language.C.Syntax.AST
 import           Language.C.System.GCC
 import           Language.C.System.Preprocess
-import           Prelude hiding (concat, sequence, mapM)
+import           Prelude hiding (concat, sequence, mapM, foldr)
 import           System.Console.CmdArgs
 import           System.Directory
 import           System.Environment
@@ -44,6 +44,7 @@ data C2HscOptions = C2HscOptions
     , cppopts   :: String
     , prefix    :: String
     , useStdout :: Bool
+    , overrides :: FilePath
     , verbose   :: Bool
     , debug     :: Bool
     , files     :: [FilePath] }
@@ -59,6 +60,8 @@ c2hscOptions = C2HscOptions
                   &= help "Use PREFIX when naming modules"
     , useStdout = def &= name "stdout"
                   &= help "Send all output to stdout (for testing)"
+    , overrides = def &= typFile
+                  &= help "FILE contains \"C type -> FFI type\" translations"
     , verbose   = def &= name "v"
                   &= help "Report progress verbosely"
     , debug     = def &= name "D"
@@ -103,11 +106,34 @@ parseFile gccPath opts =
     case result of
       Left err     -> error $ "Failed to run cpp: " ++ show err
       Right stream -> do
+        overrideState <- defineTypeOverrides (overrides opts)
         let pos = initPos fileName
             HscOutput hscs helpercs _ =
-              execState (parseCFile stream (posFile pos) pos)
+              execState (   overrideState
+                         >> parseCFile stream (posFile pos) pos)
                         newHscState
         writeProducts opts fileName hscs helpercs
+
+defineTypeOverrides :: FilePath -> IO (Output ())
+defineTypeOverrides overridesFile = do
+  let types = mapM (uncurry overrideType)
+                   [ ("size_t", "CSize")
+                   , ("intptr_t", "IntPtr")
+                   , ("uintptr_t", "WordPtr") ]
+
+  if null overridesFile
+    then return (void types)
+    else do
+      contents <- readFile overridesFile
+      return $ L.foldr (\line acc ->
+                         let (cName:ffiName:[]) = splitOn " -> " line
+                         in acc >> overrideType cName ffiName)
+                       (void types)
+                       (lines contents)
+
+  where overrideType cName ffiName =
+          defineType cName Typedef { typedefName     = ffiName
+                                   , typedefOverride = True }
 
 -- Write out the gathered data
 
@@ -214,12 +240,7 @@ lookupType key = do
 -- Bindings-DSL format.
 
 parseCFile :: InputStream -> FilePath -> Position -> Output ()
-parseCFile stream fileName pos = do
-  for_ [ ("size_t", "CSize")
-       , ("intptr_t", "IntPtr")
-       , ("uintptr_t", "WordPtr") ] $ \(cName, ffiName) ->
-    defineType cName $ Typedef { typedefName     = ffiName
-                               , typedefOverride = True }
+parseCFile stream fileName pos =
   case parseC stream pos of
     Left err -> error $ "Failed to compile: " ++ show err
     Right (CTranslUnit decls _) -> generateHsc decls
@@ -249,7 +270,7 @@ declInfo (CAsmExt _ info)                  = info
 
 appendNode :: FilePath -> CExtDecl -> Output ()
 
-appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) = do
+appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) =
   case items of
     [] ->
       when (declInFile fp dx) $ do
@@ -264,7 +285,7 @@ appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) = do
               when (declInFile fp dx) $
                 appendFunc "#ccall" declSpecs declrtr'
 
-            _ -> do
+            _ ->
               -- If the type is a typedef, record the equivalence so we can
               -- look it up later
               case declSpecs of
@@ -278,8 +299,8 @@ appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) = do
                     when (declInFile fp dx) $
                       appendHsc $ "#synonym_t " ++ nm ++ " , " ++ dname
 
-                    defineType nm $ Typedef { typedefName     = dname
-                                            , typedefOverride = False }
+                    defineType nm Typedef { typedefName     = dname
+                                          , typedefOverride = False }
                 _ ->
                   when (declInFile fp dx) $ do
                     dname <- declSpecTypeName declSpecs
@@ -498,7 +519,7 @@ applyDeclrs _ baseType _ = return baseType
 
 prefixWith :: a -> [a] -> [a]
 prefixWith _ [] = []
-prefixWith x xs = (x:xs)
+prefixWith x xs = x:xs
 
 preQualsToString :: [CTypeQualifier a] -> String
 preQualsToString = prefixWith ' ' . qualsToStr
@@ -511,7 +532,7 @@ suffixWith _ [] = []
 suffixWith x xs = xs ++ [x]
 
 qualsToStr :: [CTypeQualifier a] -> String
-qualsToStr = intercalate " " . map qualToStr
+qualsToStr = unwords . map qualToStr
 
 qualToStr :: CTypeQualifier t -> String
 qualToStr (CConstQual _)  = "const"
