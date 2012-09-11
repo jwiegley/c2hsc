@@ -139,7 +139,8 @@ defaultOverrides = mapM_ (uncurry overrideType)
 writeProducts :: C2HscOptions -> FilePath -> [String] -> [String] -> IO ()
 writeProducts opts fileName hscs helpercs = do
   let code   = newSTMP $
-               unlines [ "#include <bindings.dsl.h>"
+               unlines [ "{-# OPTIONS_GHC -fno-warn-unused-imports #-}"
+                       , "#include <bindings.dsl.h>"
                        , "#include \"$headerFileName$\""
                        , "module $libName$.$cFileName$ where"
                        , "import Foreign.Ptr"
