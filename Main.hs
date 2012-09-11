@@ -6,7 +6,7 @@ import           Control.Applicative
 import           Control.Monad hiding (sequence)
 import           Control.Monad.Trans.State
 import           Data.Char
-import           Data.Foldable hiding (concat)
+import           Data.Foldable hiding (concat, mapM_)
 import           Data.List as L
 import           Data.List.Split
 import qualified Data.Map as M
@@ -21,7 +21,7 @@ import           Language.C.Pretty
 import           Language.C.Syntax.AST
 import           Language.C.System.GCC
 import           Language.C.System.Preprocess
-import           Prelude hiding (concat, sequence, mapM, foldr)
+import           Prelude hiding (concat, sequence, mapM, mapM_, foldr)
 import           System.Console.CmdArgs
 import           System.Directory
 import           System.Environment
@@ -109,31 +109,30 @@ parseFile gccPath opts =
         overrideState <- defineTypeOverrides (overrides opts)
         let pos = initPos fileName
             HscOutput hscs helpercs _ =
-              execState (   overrideState
-                         >> parseCFile stream (posFile pos) pos)
+              execState (overrideState >>
+                         parseCFile stream (posFile pos) pos)
                         newHscState
         writeProducts opts fileName hscs helpercs
 
 defineTypeOverrides :: FilePath -> IO (Output ())
+defineTypeOverrides [] = return (void defaultOverrides)
 defineTypeOverrides overridesFile = do
-  let types = mapM (uncurry overrideType)
-                   [ ("size_t", "CSize")
-                   , ("intptr_t", "IntPtr")
-                   , ("uintptr_t", "WordPtr") ]
+  contents <- readFile overridesFile
+  return $ mapM_ (\line ->
+                   let (cName:ffiName:[]) = splitOn " -> " line
+                   in overrideType cName ffiName)
+                 (lines contents)
 
-  if null overridesFile
-    then return (void types)
-    else do
-      contents <- readFile overridesFile
-      return $ L.foldr (\line acc ->
-                         let (cName:ffiName:[]) = splitOn " -> " line
-                         in acc >> overrideType cName ffiName)
-                       (void types)
-                       (lines contents)
+overrideType :: String -> String -> Output ()
+overrideType cName ffiName =
+  defineType cName Typedef { typedefName     = ffiName
+                           , typedefOverride = True }
 
-  where overrideType cName ffiName =
-          defineType cName Typedef { typedefName     = ffiName
-                                   , typedefOverride = True }
+defaultOverrides :: Output [()]
+defaultOverrides = mapM (uncurry overrideType)
+                        [ ("size_t",    "CSize")
+                        , ("intptr_t",  "IntPtr")
+                        , ("uintptr_t", "WordPtr") ]
 
 -- Write out the gathered data
 
