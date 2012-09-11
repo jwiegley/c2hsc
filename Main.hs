@@ -117,6 +117,7 @@ writeProducts opts fileName hscs helpercs = do
                unlines [ "#include <bindings.dsl.h>"
                        , "#include \"$headerFileName$\""
                        , "module $libName$.$cFileName$ where"
+                       , "import Foreign.Ptr"
                        , "#strict_import"
                        , "" ]
       vars   = [ ("libName",   prefix opts)
