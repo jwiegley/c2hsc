@@ -141,11 +141,14 @@ writeProducts :: C2HscOptions -> FilePath -> [String] -> [String] -> IO ()
 writeProducts opts fileName hscs helpercs = do
   let code   = newSTMP $
                unlines [ "#include <bindings.dsl.h>"
+                       , "#include \"$headerFileName$\""
                        , "module $libName$.$cFileName$ where"
+                       , "import Foreign.Ptr"
                        , "#strict_import"
                        , "" ]
       vars   = [ ("libName",   prefix opts)
-               , ("cFileName", cap) ]
+               , ("cFileName", cap)
+               , ("headerFileName", fileName) ]
       cap    = capitalize . dropExtension . takeFileName $ fileName
       target = cap ++ ".hsc"
 
