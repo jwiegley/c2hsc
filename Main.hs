@@ -31,7 +31,7 @@ import           Text.PrettyPrint as P
 import           Text.StringTemplate
 
 version :: String
-version = "0.6.0"
+version = "0.6.1"
 
 copyright :: String
 copyright = "2012"
@@ -457,7 +457,10 @@ derDeclrTypeName' cStyle declSpecs ddrs = do
       if cStyle
       then do
         baseType <- fullTypeName' s xs
-        return $ qualToStr qual ++ " " ++ baseType
+        return $ let q = qualToStr qual
+                 in if null q
+                    then baseType
+                    else q ++ " " ++ baseType
       else
         fullTypeName' s xs
 
@@ -520,15 +523,15 @@ applyDeclrs cStyle baseType (CArrDeclr quals _ _:xs)
 
 applyDeclrs _ baseType _ = return baseType
 
+preQualsToString :: [CTypeQualifier a] -> String
+preQualsToString = prefixWith ' ' . qualsToStr
+
 prefixWith :: a -> [a] -> [a]
 prefixWith _ [] = []
 prefixWith x xs = x:xs
 
-preQualsToString :: [CTypeQualifier a] -> String
-preQualsToString = prefixWith ' ' . qualsToStr
-
 sufQualsToString :: [CTypeQualifier a] -> String
-sufQualsToString = prefixWith ' ' . qualsToStr
+sufQualsToString = suffixWith ' ' . qualsToStr
 
 suffixWith :: a -> [a] -> [a]
 suffixWith _ [] = []
@@ -618,14 +621,7 @@ cTypeName (CLongType _) s   = case s of
                                Unsigned -> return "unsigned long"
                                _        -> return "long"
 
-cTypeName (CTypeDef (Ident nm _ _) _) _ = do
-  definition <- lookupType nm
-  case definition of
-    Nothing -> return nm
-    Just (Typedef { typedefOverride = True }) ->
-      return nm
-    Just (Typedef { typedefName = defNm, typedefOverride = False }) ->
-      return defNm
+cTypeName (CTypeDef (Ident nm _ _) _) _ = return nm
 
 cTypeName (CComplexType _) _  = return ""
 cTypeName (CSUType _ _) _     = return ""

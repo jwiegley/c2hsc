@@ -1,6 +1,6 @@
 Name: c2hsc
 
-Version:  0.6.0
+Version:  0.6.1
 Synopsis: Convert C API header files to .hsc and .hsc.helper.c files
 
 Description: Convert C API header files to .hsc and .hsc.helper.c files
