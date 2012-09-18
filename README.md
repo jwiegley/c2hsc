@@ -12,7 +12,9 @@ For example, in `hlibgit2` on the Mac I'm using:
 
 Known issues:
 
- - Varargs functions do not translate
+ - "void (*foo)(int, intptr_t *)" becomes "FunPtr (CInt -> Ptr IntPtr)"
+ - Need to output vararg functions with a comment mentioning they are not
+   translatable to the Haskell FFI
 
 Also, please note that this tool will never be 100% accurate.  It cannot
 translate macros, or anything related to the preprocessor, for example.  It

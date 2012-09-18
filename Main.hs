@@ -31,7 +31,7 @@ import           Text.PrettyPrint as P
 import           Text.StringTemplate
 
 version :: String
-version = "0.6.1"
+version = "0.6.2"
 
 copyright :: String
 copyright = "2012"
@@ -490,7 +490,9 @@ applyDeclrs cStyle baseType (CPtrDeclr {}:f@CFunDeclr {}:ds) = do
 applyDeclrs cStyle baseType (CFunDeclr (Right (decls, _)) _ _:_)
   | cStyle    = renderList ", " (funTypes decls baseType)
   | otherwise = do
-    argTypes <- renderList " -> " (funTypes decls baseType)
+    argTypes <- renderList " -> " (funTypes decls (if null baseType
+                                                   then "IO ()"
+                                                   else baseType))
     return $ "FunPtr (" ++ argTypes ++ ")"
 
   where renderList str xs = intercalate str <$> filter (not . null) <$> xs
