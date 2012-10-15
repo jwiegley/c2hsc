@@ -12,7 +12,6 @@ For example, in `hlibgit2` on the Mac I'm using:
 
 Known issues:
 
- - "void (*foo)(int, intptr_t *)" becomes "FunPtr (CInt -> Ptr IntPtr)"
  - Need to output vararg functions with a comment mentioning they are not
    translatable to the Haskell FFI
 
