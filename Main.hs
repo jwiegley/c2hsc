@@ -102,7 +102,11 @@ parseFile :: FilePath -> C2HscOptions -> IO ()
 parseFile gccPath opts =
   for_ (files opts) $ \fileName -> do
     result <- runPreprocessor (newGCC gccPath)
-                              (rawCppArgs [cppopts opts] fileName)
+                              (rawCppArgs
+                                (if null (cppopts opts)
+                                  then []
+                                  else [cppopts opts])
+                                fileName)
     case result of
       Left err     -> error $ "Failed to run cpp: " ++ show err
       Right stream -> do
