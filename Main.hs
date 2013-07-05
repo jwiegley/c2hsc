@@ -6,7 +6,7 @@ import           Control.Applicative
 import           Control.Monad hiding (sequence)
 import           Control.Monad.Trans.State
 import           Data.Char
-import           Data.Foldable hiding (concat, mapM_)
+import           Data.Foldable hiding (concat, elem, mapM_)
 import           Data.List as L
 import           Data.List.Split
 import qualified Data.Map as M
@@ -165,10 +165,11 @@ writeProducts opts fileName hscs helpercs = do
   -- Sniff through the file again, but looking only for local #include's
   includes <- filter ("#include \"" `isPrefixOf`) . lines
                      <$> readFile fileName
-  for_ includes $ \inc ->
-    hPutStrLn handle $ "import "
-                    ++ prefix opts ++ "."
-                    ++ (capitalize . takeWhile (/= '.') . drop 10 $ inc)
+  for_ includes $ \inc -> do
+    let incPath      = splitOn "\"" inc !! 1
+        incPathParts = map dropTrailingPathSeparator $ splitPath $ dropExtension incPath
+        modName      = intercalate "." $ prefix opts : map capitalize incPathParts
+    hPutStrLn handle $ "import " ++ modName
 
   traverse_ (hPutStrLn handle) hscs
 
@@ -352,7 +353,12 @@ appendFunc marker declSpecs (CDeclr ident ddrs _ _ _) = do
 
   retType  <- derDeclrTypeName declSpecs retDeclr
   argTypes <- (++) <$> getArgTypes funcDeclr
-                   <*> pure [ "IO (" ++ retType ++ ")" ]
+                   <*> pure [ "IO " ++
+                              (if null retType || ' ' `elem` retType
+                                 then "(" ++ retType ++ ")"
+                                 else        retType
+                              )
+                            ]
 
   let name' = nameFromIdent ident
       code  = newSTMP "$marker$ $name$ , $argTypes;separator=' -> '$"
