@@ -6,7 +6,7 @@ import           Control.Applicative
 import           Control.Monad hiding (sequence)
 import           Control.Monad.Trans.State
 import           Data.Char
-import           Data.Foldable hiding (concat, mapM_)
+import           Data.Foldable hiding (concat, elem, mapM_)
 import           Data.List as L
 import           Data.List.Split
 import qualified Data.Map as M
@@ -352,7 +352,12 @@ appendFunc marker declSpecs (CDeclr ident ddrs _ _ _) = do
 
   retType  <- derDeclrTypeName declSpecs retDeclr
   argTypes <- (++) <$> getArgTypes funcDeclr
-                   <*> pure [ "IO (" ++ retType ++ ")" ]
+                   <*> pure [ "IO " ++
+                              (if null retType || ' ' `elem` retType
+                                 then "(" ++ retType ++ ")"
+                                 else        retType
+                              )
+                            ]
 
   let name' = nameFromIdent ident
       code  = newSTMP "$marker$ $name$ , $argTypes;separator=' -> '$"
