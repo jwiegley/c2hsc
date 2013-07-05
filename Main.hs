@@ -353,12 +353,7 @@ appendFunc marker declSpecs (CDeclr ident ddrs _ _ _) = do
 
   retType  <- derDeclrTypeName declSpecs retDeclr
   argTypes <- (++) <$> getArgTypes funcDeclr
-                   <*> pure [ "IO " ++
-                              (if null retType || ' ' `elem` retType
-                                 then "(" ++ retType ++ ")"
-                                 else        retType
-                              )
-                            ]
+                   <*> pure [ "IO " ++ tyParens retType ]
 
   let name' = nameFromIdent ident
       code  = newSTMP "$marker$ $name$ , $argTypes;separator=' -> '$"
@@ -511,7 +506,7 @@ applyDeclrs cStyle baseType (CFunDeclr (Right (decls, _)) _ _:_)
     argTypes <- renderList " -> " (funTypes decls (if null baseType
                                                    then "IO ()"
                                                    else baseType))
-    return $ "FunPtr (" ++ argTypes ++ ")"
+    return $ "FunPtr " ++ tyParens argTypes
 
   where renderList str xs = intercalate str <$> filter (not . null) <$> xs
         funTypes xs bt    = (++) <$> mapM (cdeclTypeName' cStyle) xs
@@ -529,17 +524,15 @@ applyDeclrs cStyle baseType (CPtrDeclr quals _:xs)
   | cStyle    = concatM [ applyDeclrs cStyle baseType xs
                         , pure "*"
                         , pure (preQualsToString quals) ]
-  | otherwise = concatM [ pure "Ptr ("
-                        , applyDeclrs cStyle baseType xs
-                        , pure ")" ]
+  | otherwise = concatM [ pure "Ptr "
+                        , tyParens `fmap` applyDeclrs cStyle baseType xs ]
 
 applyDeclrs cStyle baseType (CArrDeclr quals _ _:xs)
   | cStyle    = concatM [ pure (sufQualsToString quals)
                         , applyDeclrs cStyle baseType xs
                         , pure "[]" ]
-  | otherwise = concatM [ pure "Ptr ("
-                        , applyDeclrs cStyle baseType xs
-                        , pure ")" ]
+  | otherwise = concatM [ pure "Ptr "
+                        , tyParens `fmap` applyDeclrs cStyle baseType xs ]
 
 applyDeclrs _ baseType _ = return baseType
 
@@ -650,5 +643,11 @@ cTypeName (CTypeOfExpr _ _) _ = return ""
 cTypeName (CTypeOfType _ _) _ = return ""
 
 cTypeName _ _ = return ""
+
+tyParens :: String -> String
+tyParens ty =
+  if null ty || ' ' `elem` ty
+    then concat ["(", ty, ")"]
+    else ty
 
 -- c2hsc.hs
