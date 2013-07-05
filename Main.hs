@@ -165,10 +165,11 @@ writeProducts opts fileName hscs helpercs = do
   -- Sniff through the file again, but looking only for local #include's
   includes <- filter ("#include \"" `isPrefixOf`) . lines
                      <$> readFile fileName
-  for_ includes $ \inc ->
-    hPutStrLn handle $ "import "
-                    ++ prefix opts ++ "."
-                    ++ (capitalize . takeWhile (/= '.') . drop 10 $ inc)
+  for_ includes $ \inc -> do
+    let incPath      = splitOn "\"" inc !! 1
+        incPathParts = map dropTrailingPathSeparator $ splitPath $ dropExtension incPath
+        modName      = intercalate "." $ prefix opts : map capitalize incPathParts
+    hPutStrLn handle $ "import " ++ modName
 
   traverse_ (hPutStrLn handle) hscs
 
