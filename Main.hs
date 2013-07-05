@@ -176,7 +176,7 @@ writeProducts opts fileName hscs helpercs = do
     hClose handle
     putStrLn $ "Wrote " ++ target
 
-  when (length helpercs > 0) $ do
+  unless (null helpercs) $ do
     let targetc = cap ++ ".hsc.helper.c"
     handlec <- if useStdout opts
                then return System.IO.stdout
@@ -288,6 +288,10 @@ appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) =
       for_ xs $ \(declrtr, _, _) ->
         for_ (splitDecl declrtr) $ \(declrtr', ddrs, nm) ->
           case ddrs of
+            CPtrDeclr{}:CFunDeclr (Right _) _ _:_ ->
+              when (declInFile fp dx) $
+                appendFunc "#callback" declSpecs declrtr'
+
             CFunDeclr (Right (_, _)) _ _:_ ->
               when (declInFile fp dx) $
                 appendFunc "#ccall" declSpecs declrtr'
@@ -329,11 +333,10 @@ appendNode fp dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
         CFunDeclr (Right (decls, _)) _ _ -> do
           retType <- derDeclrTypeName' True declSpecs (tail ddrs)
           funType <- applyDeclrs True retType ddrs
-          if not (null retType)
-            then appendHelper $ "BC_INLINE" ++ show (length decls)
-                             ++ "(" ++ nm ++ ", " ++ funType ++ ")"
-            else appendHelper $ "BC_INLINE" ++ show (length decls)
-                             ++ "VOID(" ++ nm ++ ", " ++ funType ++ ")"
+          appendHelper $
+            "BC_INLINE" ++ show (length decls)
+            ++ (if not (null retType) then "" else "VOID")
+            ++ "(" ++ nm ++ ", " ++ funType ++ ")"
         _ -> return ()
 
 appendNode _ (CAsmExt _ _) = return ()
@@ -469,9 +472,9 @@ derDeclrTypeName' cStyle declSpecs ddrs = do
         fullTypeName' s xs
 
     fullTypeName' _ (CTypeSpec (CSignedType _):[]) =
-      if cStyle then return "signed" else return "CInt"
+      return $ if cStyle then "signed" else "CInt"
     fullTypeName' _ (CTypeSpec (CUnsigType _):[]) =
-      if cStyle then return "unsigned" else return "CUInt"
+      return $ if cStyle then "unsigned" else "CUInt"
 
     fullTypeName' s (x:xs) =
       case x of
