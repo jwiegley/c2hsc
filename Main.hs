@@ -392,7 +392,7 @@ appendType declSpecs declrName = traverse_ appendType' declSpecs
       for_ decls $ \xs -> do
         appendHsc $ "#starttype " ++ name'
         for_ xs $ \x ->
-          for_ (cdeclName x) $ \declName -> do
+          for_ (cdeclNames x) $ \declName -> do
             let CDecl declSpecs' ((Just y, _, _):_) _ = x
             case y of
               CDeclr _ (CArrDeclr {}:zs) _ _ _ -> do
@@ -423,11 +423,16 @@ appendType declSpecs declrName = traverse_ appendType' declSpecs
 
 data Signedness = None | Signed | Unsigned deriving (Eq, Show, Enum)
 
-cdeclName :: CDeclaration a -> Maybe String
-cdeclName (CDecl _ more _) =
-  case more of
-    (Just (CDeclr (Just (Ident nm _ _)) _ _ _ _), _, _) : _ -> Just nm
-    _ -> Nothing
+cdeclNames :: CDeclaration a -> [String]
+cdeclNames (CDecl _ more _) =
+  collect more []
+  where
+    collect []     nms = reverse nms
+    collect (m:ms) nms = collect ms $
+      case m of
+        (Just (CDeclr (Just (Ident nm _ _)) _ _ _ _), _, _)
+          -> nm:nms
+        _ ->    nms
 
 cdeclTypeName :: CDeclaration a -> Output String
 cdeclTypeName = cdeclTypeName' False
