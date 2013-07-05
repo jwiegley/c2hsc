@@ -288,6 +288,10 @@ appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) =
       for_ xs $ \(declrtr, _, _) ->
         for_ (splitDecl declrtr) $ \(declrtr', ddrs, nm) ->
           case ddrs of
+            CPtrDeclr{}:CFunDeclr (Right _) _ _:_ ->
+              when (declInFile fp dx) $
+                appendFunc "#callback" declSpecs declrtr'
+
             CFunDeclr (Right (_, _)) _ _:_ ->
               when (declInFile fp dx) $
                 appendFunc "#ccall" declSpecs declrtr'
