@@ -353,12 +353,7 @@ appendFunc marker declSpecs (CDeclr ident ddrs _ _ _) = do
 
   retType  <- derDeclrTypeName declSpecs retDeclr
   argTypes <- (++) <$> getArgTypes funcDeclr
-                   <*> pure [ "IO " ++
-                              (if null retType || ' ' `elem` retType
-                                 then "(" ++ retType ++ ")"
-                                 else        retType
-                              )
-                            ]
+                   <*> pure [ "IO " ++ tyParens retType ]
 
   let name' = nameFromIdent ident
       code  = newSTMP "$marker$ $name$ , $argTypes;separator=' -> '$"
@@ -392,7 +387,7 @@ appendType declSpecs declrName = traverse_ appendType' declSpecs
       for_ decls $ \xs -> do
         appendHsc $ "#starttype " ++ name'
         for_ xs $ \x ->
-          for_ (cdeclName x) $ \declName -> do
+          for_ (cdeclNames x) $ \declName -> do
             let CDecl declSpecs' ((Just y, _, _):_) _ = x
             case y of
               CDeclr _ (CArrDeclr {}:zs) _ _ _ -> do
@@ -423,11 +418,16 @@ appendType declSpecs declrName = traverse_ appendType' declSpecs
 
 data Signedness = None | Signed | Unsigned deriving (Eq, Show, Enum)
 
-cdeclName :: CDeclaration a -> Maybe String
-cdeclName (CDecl _ more _) =
-  case more of
-    (Just (CDeclr (Just (Ident nm _ _)) _ _ _ _), _, _) : _ -> Just nm
-    _ -> Nothing
+cdeclNames :: CDeclaration a -> [String]
+cdeclNames (CDecl _ more _) =
+  collect more []
+  where
+    collect []     nms = reverse nms
+    collect (m:ms) nms = collect ms $
+      case m of
+        (Just (CDeclr (Just (Ident nm _ _)) _ _ _ _), _, _)
+          -> nm:nms
+        _ ->    nms
 
 cdeclTypeName :: CDeclaration a -> Output String
 cdeclTypeName = cdeclTypeName' False
@@ -506,7 +506,7 @@ applyDeclrs cStyle baseType (CFunDeclr (Right (decls, _)) _ _:_)
     argTypes <- renderList " -> " (funTypes decls (if null baseType
                                                    then "IO ()"
                                                    else baseType))
-    return $ "FunPtr (" ++ argTypes ++ ")"
+    return $ "FunPtr " ++ tyParens argTypes
 
   where renderList str xs = intercalate str <$> filter (not . null) <$> xs
         funTypes xs bt    = (++) <$> mapM (cdeclTypeName' cStyle) xs
@@ -524,17 +524,15 @@ applyDeclrs cStyle baseType (CPtrDeclr quals _:xs)
   | cStyle    = concatM [ applyDeclrs cStyle baseType xs
                         , pure "*"
                         , pure (preQualsToString quals) ]
-  | otherwise = concatM [ pure "Ptr ("
-                        , applyDeclrs cStyle baseType xs
-                        , pure ")" ]
+  | otherwise = concatM [ pure "Ptr "
+                        , tyParens `fmap` applyDeclrs cStyle baseType xs ]
 
 applyDeclrs cStyle baseType (CArrDeclr quals _ _:xs)
   | cStyle    = concatM [ pure (sufQualsToString quals)
                         , applyDeclrs cStyle baseType xs
                         , pure "[]" ]
-  | otherwise = concatM [ pure "Ptr ("
-                        , applyDeclrs cStyle baseType xs
-                        , pure ")" ]
+  | otherwise = concatM [ pure "Ptr "
+                        , tyParens `fmap` applyDeclrs cStyle baseType xs ]
 
 applyDeclrs _ baseType _ = return baseType
 
@@ -645,5 +643,11 @@ cTypeName (CTypeOfExpr _ _) _ = return ""
 cTypeName (CTypeOfType _ _) _ = return ""
 
 cTypeName _ _ = return ""
+
+tyParens :: String -> String
+tyParens ty =
+  if null ty || ' ' `elem` ty
+    then concat ["(", ty, ")"]
+    else ty
 
 -- c2hsc.hs
