@@ -40,14 +40,15 @@ c2hscSummary :: String
 c2hscSummary = "c2hsc v" ++ version ++ ", (C) John Wiegley " ++ copyright
 
 data C2HscOptions = C2HscOptions
-    { gcc       :: FilePath
-    , cppopts   :: String
-    , prefix    :: String
-    , useStdout :: Bool
-    , overrides :: FilePath
-    , verbose   :: Bool
-    , debug     :: Bool
-    , files     :: [FilePath] }
+    { gcc        :: FilePath
+    , cppopts    :: String
+    , prefix     :: String
+    , filePrefix :: Maybe String
+    , useStdout  :: Bool
+    , overrides  :: FilePath
+    , verbose    :: Bool
+    , debug      :: Bool
+    , files      :: [FilePath] }
     deriving (Data, Typeable, Show, Eq)
 
 c2hscOptions :: C2HscOptions
@@ -58,6 +59,8 @@ c2hscOptions = C2HscOptions
                   &= help "Pass OPTS to the preprocessor"
     , prefix    = def &= typ "PREFIX"
                   &= help "Use PREFIX when naming modules"
+    , filePrefix = def &= typ "FILE_PREFIX"
+                  &= help "Process included headers whose paths match this prefix"
     , useStdout = def &= name "stdout"
                   &= help "Send all output to stdout (for testing)"
     , overrides = def &= typFile
@@ -113,9 +116,9 @@ parseFile gccPath opts =
         overrideState <- defineTypeOverrides (overrides opts)
         let pos = initPos fileName
             HscOutput hscs helpercs _ =
-              execState (overrideState >>
-                         parseCFile stream (posFile pos) pos)
-                        newHscState
+              let fm = maybe (posFile pos ==) isPrefixOf (filePrefix opts)
+              in execState (overrideState >> parseCFile stream fm pos)
+                           newHscState
         writeProducts opts fileName hscs helpercs
 
 defineTypeOverrides :: FilePath -> IO (Output ())
@@ -247,17 +250,17 @@ lookupType key = do
 -- to those occurring in the target file, and then print the declarations in
 -- Bindings-DSL format.
 
-parseCFile :: InputStream -> FilePath -> Position -> Output ()
-parseCFile stream fileName pos =
+parseCFile :: InputStream -> (FilePath -> Bool) -> Position -> Output ()
+parseCFile stream fm pos =
   case parseC stream pos of
     Left err -> error $ "Failed to compile: " ++ show err
     Right (CTranslUnit decls _) -> generateHsc decls
   where
     generateHsc :: [CExtDecl] -> Output ()
-    generateHsc = traverse_ (appendNode fileName)
+    generateHsc = traverse_ (appendNode fm)
 
-declInFile :: FilePath -> CExtDecl -> Bool
-declInFile fileName = (== fileName) . posFile . posOfNode . declInfo
+declMatches :: (FilePath -> Bool) -> CExtDecl -> Bool
+declMatches fm = fm . posFile . posOfNode . declInfo
 
 declInfo :: CExtDecl -> NodeInfo
 declInfo (CDeclExt (CDecl _ _ info))       = info
@@ -276,12 +279,12 @@ declInfo (CAsmExt _ info)                  = info
 --   - Extern Functions
 --   - Inline Functions
 
-appendNode :: FilePath -> CExtDecl -> Output ()
+appendNode :: (FilePath -> Bool) -> CExtDecl -> Output ()
 
-appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) =
+appendNode fm dx@(CDeclExt (CDecl declSpecs items _)) =
   case items of
     [] ->
-      when (declInFile fp dx) $ do
+      when (declMatches fm dx) $ do
         appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
         appendType declSpecs ""
 
@@ -290,11 +293,11 @@ appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) =
         for_ (splitDecl declrtr) $ \(declrtr', ddrs, nm) ->
           case ddrs of
             CPtrDeclr{}:CFunDeclr (Right _) _ _:_ ->
-              when (declInFile fp dx) $
+              when (declMatches fm dx) $
                 appendFunc "#callback" declSpecs declrtr'
 
             CFunDeclr (Right (_, _)) _ _:_ ->
-              when (declInFile fp dx) $
+              when (declMatches fm dx) $
                 appendFunc "#ccall" declSpecs declrtr'
 
             _ ->
@@ -302,19 +305,19 @@ appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) =
               -- look it up later
               case declSpecs of
                 CStorageSpec (CTypedef _):_ -> do
-                  when (declInFile fp dx) $ do
+                  when (declMatches fm dx) $ do
                     appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
                     appendType declSpecs nm
 
                   dname <- declSpecTypeName declSpecs
                   unless (null dname || dname == "<" ++ nm ++ ">") $ do
-                    when (declInFile fp dx) $
+                    when (declMatches fm dx) $
                       appendHsc $ "#synonym_t " ++ nm ++ " , " ++ dname
 
                     defineType nm Typedef { typedefName     = dname
                                           , typedefOverride = False }
                 _ ->
-                  when (declInFile fp dx) $ do
+                  when (declMatches fm dx) $ do
                     dname <- declSpecTypeName declSpecs
                     appendHsc $ "#globalvar " ++ nm ++ " , " ++ dname
   where
@@ -322,9 +325,9 @@ appendNode fp dx@(CDeclExt (CDecl declSpecs items _)) =
       d@(CDeclr ident ddrs _ _ _) <- declrtr
       return (d, ddrs, case ident of Just (Ident nm _ _) -> nm; _ -> "")
 
-appendNode fp dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
+appendNode fm dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
   -- Assume functions defined in headers are inline functions
-  when (declInFile fp dx) $ do
+  when (declMatches fm dx) $ do
     appendFunc "#cinline" declSpecs declrtr
 
     let CDeclr ident ddrs _ _ _ = declrtr
