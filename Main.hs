@@ -41,7 +41,7 @@ c2hscSummary = "c2hsc v" ++ version ++ ", (C) John Wiegley " ++ copyright
 
 data C2HscOptions = C2HscOptions
     { gcc        :: FilePath
-    , cppopts    :: String
+    , cppopts    :: [String]
     , prefix     :: String
     , filePrefix :: Maybe String
     , useStdout  :: Bool
@@ -106,9 +106,7 @@ parseFile gccPath opts =
   for_ (files opts) $ \fileName -> do
     result <- runPreprocessor (newGCC gccPath)
                               (rawCppArgs
-                                (if null (cppopts opts)
-                                  then []
-                                  else [cppopts opts])
+                                (cppopts opts)
                                 fileName)
     case result of
       Left err     -> error $ "Failed to run cpp: " ++ show err
