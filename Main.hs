@@ -377,11 +377,15 @@ appendFunc marker declSpecs (CDeclr ident ddrs _ _ _) = do
     isFuncDeclr (CFunDeclr {}) = True
     isFuncDeclr _ = False
 
+structTagPrefix :: CStructTag -> String
+structTagPrefix CStructTag = "struct "
+structTagPrefix CUnionTag = "union "
+
 appendType :: [CDeclarationSpecifier a] -> String -> Output ()
 appendType declSpecs declrName = traverse_ appendType' declSpecs
   where
-    appendType' (CTypeSpec (CSUType (CStruct _ ident decls _ _) _)) = do
-      let name' = identName ident
+    appendType' (CTypeSpec (CSUType (CStruct tag ident decls _ _) _)) = do
+      let name' = identName (structTagPrefix tag) ident
       when (isNothing decls) $
         appendHsc $ "#opaque_t " ++ name'
 
@@ -400,7 +404,7 @@ appendType declSpecs declrName = traverse_ appendType' declSpecs
         appendHsc "#stoptype"
 
     appendType' (CTypeSpec (CEnumType (CEnum ident defs _ _) _)) = do
-      let name' = identName ident
+      let name' = identName "enum " ident
       appendHsc $ "#integral_t " ++ name'
 
       for_ defs $ \ds ->
@@ -409,9 +413,9 @@ appendType declSpecs declrName = traverse_ appendType' declSpecs
 
     appendType' _ = return ()
 
-    identName ident = case ident of
+    identName pref ident = case ident of
                         Nothing -> declrName
-                        Just (Ident nm _ _) -> nm
+                        Just (Ident nm _ _) -> pref ++ nm
 
 -- The remainder of this file is some hairy code for turning various
 -- constructs into Bindings-DSL type names, such as turning "int ** foo" into
@@ -596,10 +600,10 @@ typeName (CTypeDef (Ident nm _ _) _) _ = do
     Just (Typedef { typedefName = defNm }) ->
       return defNm
 
-typeName (CSUType (CStruct _ (Just (Ident nm _ _)) _ _ _) _) _ =
-  return $ "<" ++ nm ++ ">"
+typeName (CSUType (CStruct tag (Just (Ident nm _ _)) _ _ _) _) _ =
+  return $ "<" ++ (structTagPrefix tag) ++ nm ++ ">"
 typeName (CEnumType (CEnum (Just (Ident nm _ _)) _ _ _) _) _ =
-  return $ "<" ++ nm ++ ">"
+  return $ "<enum " ++ nm ++ ">"
 
 typeName (CComplexType _) _  = return ""
 typeName (CTypeOfExpr _ _) _ = return ""
