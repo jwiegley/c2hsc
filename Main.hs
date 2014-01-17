@@ -405,7 +405,7 @@ appendType declSpecs declrName = traverse_ appendType' declSpecs
 
     appendType' (CTypeSpec (CEnumType (CEnum ident defs _ _) _)) = do
       let name' = identName "enum " ident
-      appendHsc $ "#integral_t " ++ name'
+      when (length name' > 0) $ appendHsc $ "#integral_t " ++ name'
 
       for_ defs $ \ds ->
         for_ ds $ \(Ident nm _ _, _) ->
