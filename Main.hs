@@ -139,6 +139,9 @@ defaultOverrides = mapM_ (uncurry overrideType)
                          , ("intptr_t",  "IntPtr")
                          , ("uintptr_t", "WordPtr") ]
 
+makeModuleName :: String -> String
+makeModuleName = Prelude.concatMap capitalize . splitOn "-"
+
 -- Write out the gathered data
 
 writeProducts :: C2HscOptions -> FilePath -> [String] -> [String] -> IO ()
@@ -154,7 +157,7 @@ writeProducts opts fileName hscs helpercs = do
       vars   = [ ("libName",   prefix opts)
                , ("cFileName", cap)
                , ("headerFileName", fileName) ]
-      cap    = capitalize . dropExtension . takeFileName $ fileName
+      cap    = makeModuleName . dropExtension . takeFileName $ fileName
       target = cap ++ ".hsc"
 
   handle <- if useStdout opts
@@ -169,7 +172,7 @@ writeProducts opts fileName hscs helpercs = do
   for_ includes $ \inc -> do
     let incPath      = splitOn "\"" inc !! 1
         incPathParts = map dropTrailingPathSeparator $ splitPath $ dropExtension incPath
-        modName      = intercalate "." $ prefix opts : map capitalize incPathParts
+        modName      = intercalate "." $ prefix opts : map makeModuleName incPathParts
     hPutStrLn handle $ "import " ++ modName
 
   traverse_ (hPutStrLn handle) hscs
