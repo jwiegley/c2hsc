@@ -31,7 +31,7 @@ import           Text.PrettyPrint as P
 import           Text.StringTemplate
 
 version :: String
-version = "0.6.2"
+version = "0.6.4"
 
 copyright :: String
 copyright = "2012"
