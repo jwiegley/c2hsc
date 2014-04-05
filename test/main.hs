@@ -85,36 +85,110 @@ typedef struct MyStructEmpty MyStructEmptyType;
 #synonym_t MyStructEmptyType , <struct MyStructEmpty>
 |]
 
-        it "basic type: float" $ do
+        it "primitive type: float" $ do
             matches [here|
 float ordinary_float;
 |] [here|
 #globalvar ordinary_float , CFloat
 |]
---   float ordinary_float;
---   double ordinary_double;
---   long double ordinary_long_double;
--- // types which can be signed
---   // char
---     char ordinary_signed_char;
---     signed char explicit_signed_char;
---     unsigned char unsigned_char;
---   // short
---     short ordinary_signed_short;
---     signed short explicit_signed_short;
---     unsigned short unsigned_short;
---   // int
---     int ordinary_signed_int;
---     signed int explicit_signed_int;
---     unsigned int unsigned_int;
---   // long
---     long ordinary_signed_long;
---     signed long explicit_signed_long;
---     unsigned long unsigned_long;
---   // long long
---     long long ordinary_signed_long_long;
---     signed long long explicit_signed_long_long;
---     unsigned long long unsigned_long_long;
+        it "primitive type: double" $ do
+            matches [here|
+double ordinary_double;
+|] [here|
+#globalvar ordinary_double , CDouble
+|]
+        -- test disabled until https://ghc.haskell.org/trac/ghc/ticket/3353 is resolved.
+        -- 
+        -- it "primitive type: long double" $ do
+        --     matches [here|
+        -- long double ordinary_long_double;
+        -- |] [here|
+        -- #globalvar ordinary_long_double , CLongDouble
+        -- |]
+        it "primitive type: char" $ do
+            matches [here|
+char ordinary_signed_char;
+|] [here|
+#globalvar ordinary_signed_char , CChar
+|]
+        it "primitive type: unsigned char" $ do
+            matches [here|
+unsigned char unsigned_char;
+|] [here|
+#globalvar unsigned_char , CUChar
+|]
+        it "primitive type: short" $ do
+            matches [here|
+short ordinary_signed_short;
+|] [here|
+#globalvar ordinary_signed_short , CShort
+|]
+        it "primitive type: signed short" $ do
+            matches [here|
+signed short explicit_signed_short;
+|] [here|
+#globalvar explicit_signed_short , CShort
+|]
+        it "primitive type: unsigned short" $ do
+            matches [here|
+unsigned short unsigned_short;
+|] [here|
+#globalvar unsigned_short , CUShort
+|]
+        it "primitive type: int" $ do
+            matches [here|
+int ordinary_signed_int;
+|] [here|
+#globalvar ordinary_signed_int , CInt
+|]
+        it "primitive type: signed int" $ do
+            matches [here|
+signed int explicit_signed_int;
+|] [here|
+#globalvar explicit_signed_int , CInt
+|]
+        it "primitive type: unsigned int" $ do
+            matches [here|
+unsigned int unsigned_int;
+|] [here|
+#globalvar unsigned_int , CUInt
+|]
+        it "primitive type: long" $ do
+            matches [here|
+long ordinary_signed_long;
+|] [here|
+#globalvar ordinary_signed_long , CLong
+|]
+        it "primitive type: signed long" $ do
+            matches [here|
+signed long explicit_signed_long;
+|] [here|
+#globalvar explicit_signed_long , CLong
+|]
+        it "primitive type: unsigned long" $ do
+            matches [here|
+unsigned long unsigned_long;
+|] [here|
+#globalvar unsigned_long , CULong
+|]
+        it "primitive type: long long" $ do
+            matches [here|
+long long ordinary_signed_long_long;
+|] [here|
+#globalvar ordinary_signed_long_long , CLlong
+|]
+        it "primitive type: signed long long" $ do
+            matches [here|
+signed long long explicit_signed_long_long;
+|] [here|
+#globalvar explicit_signed_long_long , CLlong
+|]
+        it "primitive type: unsigned long long" $ do
+            matches [here|
+unsigned long long unsigned_long_long;
+|] [here|
+#globalvar unsigned_long_long , CULlong
+|]
 -- // pointers
 --   // primitive types which cannot be signed
 --     void* ordinary_void_pointer;
