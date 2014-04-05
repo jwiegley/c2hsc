@@ -73,9 +73,6 @@ processString str = do
 
 runArgs :: C2HscOptions -> Maybe Handle -> Bool -> IO ()
 runArgs opts output omitHeader = do
-  when (null (prefix opts)) $
-    error "Please specify a module prefix to use with --prefix"
-
   gccExe <- findExecutable $ case gcc opts of "" -> "gcc"; x -> x
   case gccExe of
     Nothing      -> error $ "Cannot find executable '" ++ gcc opts ++ "'"
@@ -143,12 +140,13 @@ writeProducts opts fileName output omitHeader hscs helpercs = do
               [ "{-# OPTIONS_GHC -fno-warn-unused-imports #-}"
               , "#include <bindings.dsl.h>"
               , "#include \"$headerFileName$\""
-              , "module $libName$.$cFileName$ where"
+              , "module $libName$$cFileName$ where"
               , "import Foreign.Ptr"
               , "#strict_import"
               , ""
               ]
-      vars   = [ ("libName",   prefix opts)
+      pre    = prefix opts
+      vars   = [ ("libName", if null pre then "" else '.':pre)
                , ("cFileName", cap)
                , ("headerFileName", fileName) ]
       cap    = makeModuleName . dropExtension . takeFileName $ fileName

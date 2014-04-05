@@ -1,5 +1,6 @@
 module Main where
 
+import Control.Logging hiding (debug)
 import Control.Monad hiding (sequence)
 import Data.C2Hsc (C2HscOptions(..), runArgs)
 import Data.List as L
@@ -46,4 +47,4 @@ main :: IO ()
 main = getArgs >>= \mainArgs -> do
   opts <- withArgs (if null mainArgs then ["--help"] else mainArgs)
           (cmdArgs c2hscOptions)
-  runArgs opts Nothing False
+  withStderrLogging $ runArgs opts Nothing False
