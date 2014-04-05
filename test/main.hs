@@ -58,6 +58,32 @@ union u {
 #field c , CChar
 #stoptype
 |]
+        it "handles issue #15" $ do
+            matches [here|
+struct MyTypeImpl;
+typedef struct MyTypeImpl* MyType;
+
+typedef struct MyStruct {
+  int x;
+} MyStructType;
+
+typedef struct MyStructEmpty MyStructEmptyType;
+|] [here|
+{- struct MyTypeImpl; -}
+#opaque_t struct MyTypeImpl
+{- typedef struct MyTypeImpl * MyType; -}
+#synonym_t MyType , <struct MyTypeImpl>
+{- typedef struct MyStruct {
+            int x;
+        } MyStructType; -}
+#starttype struct MyStruct
+#field x , CInt
+#stoptype
+#synonym_t MyStructType , <struct MyStruct>
+{- typedef struct MyStructEmpty MyStructEmptyType; -}
+#opaque_t struct MyStructEmpty
+#synonym_t MyStructEmptyType , <struct MyStructEmpty>
+|]
 
 matches :: String -> String -> IO ()
 matches input output = do
