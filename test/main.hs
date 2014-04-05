@@ -7,7 +7,6 @@ import Control.Exception
 import Control.Logging
 import Data.C2Hsc
 import Data.Char
-import Data.Monoid
 import Data.String.Here
 import Data.Text (Text, pack)
 import Prelude hiding (log)
@@ -18,16 +17,23 @@ tryAny = try
 
 main :: IO ()
 main = withStdoutLogging $ hspec $ do
-    describe "sanity check" $
-        it "maps a typedef" $
+    describe "issues" $ do
+        it "#15" $
             matches [here|
-typedef int an_int;
+typedef struct Foo_ Foo;
+typedef enum Bar_ { BAR } Bar;
 |] [here|
-{- typedef int an_int; -}
-#synonym_t an_int , CInt
+{- typedef struct Foo_ Foo; -}
+#opaque_t struct Foo_
+#synonym_t Foo , <struct Foo_>
+{- typedef enum Bar_ {
+            BAR
+        } Bar; -}
+#integral_t enum Bar_
+#num BAR
+#synonym_t Bar , <enum Bar_>
 |]
 
-    describe "issues" $ do
         it "#12" $
             matches [here|
 struct st {
@@ -1405,6 +1411,193 @@ unsigned long unsigned_long;
 #starttype struct unsigned_long_long_pointer_array_struct
 #array_field unsigned_long_long_pointer_array_member , Ptr CULong
 #stoptype
+|]
+
+    describe "sanity check" $ do
+        it "maps a typedef" $
+            matches [here|
+typedef int an_int;
+|] [here|
+{- typedef int an_int; -}
+#synonym_t an_int , CInt
+|]
+
+        it "processes smoke.h" $
+            matches [here|
+typedef unsigned int uint;
+typedef unsigned long size_t;
+
+void    foo1(void);
+void    foo2(int);
+void    foo3(int, int);
+int     foo4(void);
+char    foo5(int);
+char *  foo6(int, int);
+char *  foo7(char *);
+char *  foo8(char * b);
+char *  foo9(char * (*b)(void));
+char *  foo10(char * (*b)(int));
+void *  foo11(void * (*b)(void));
+void *  foo12(void * (*b)(int));
+char *  foo13(char []);
+char *  foo14(char b[]);
+char *  foo15(char b[5]);
+char *  foo16(int);
+int     foo17(char ***);
+int     foo18(unsigned);
+int     foo19(unsigned int);
+int     foo20(uint);
+int     foo21(int (*)(int));
+int     foo22(int *(*)(int));
+int     foo23(int **(*)(int));
+int     foo24(int ***(*)(int));
+int *   foo25(int);
+int **  foo26(int);
+int *** foo27(int);
+int *** foo28(size_t);
+
+struct bar1_t {
+  void *  a;
+  int     b;
+  char    c;
+  char *  d;
+  char *  (*e)(void);
+  void    (*f)(void *);
+  int *   (*g)(void *);
+  int **  (*h)(void *);
+  int *** (*i)(void *);
+  char    j[2];
+
+  struct bar1_t * k;
+};
+
+typedef struct bar2_t {
+  int a;
+} bar2_t;
+
+typedef struct {
+  int a;
+} bar3_t;
+
+enum {
+  BAZ1 = 1
+};
+
+typedef enum {
+  BAZ2 = 1
+} baz2_t;
+
+enum baz3_t {
+  BAZ3 = 1
+};
+
+typedef enum baz4_t {
+  BAZ4 = 1
+} baz4_t;
+
+extern int global;
+
+inline int inline_foo(int a, int * b, const int c, const int * d,
+                      const int ** e, const int * const * f, size_t g) {
+  return 10;
+}
+|] [here|
+{- typedef unsigned int uint; -}
+#synonym_t uint , CUInt
+{- typedef unsigned long size_t; -}
+#synonym_t size_t , CULong
+#ccall foo1 , IO ()
+#ccall foo2 , CInt -> IO ()
+#ccall foo3 , CInt -> CInt -> IO ()
+#ccall foo4 , IO CInt
+#ccall foo5 , CInt -> IO CChar
+#ccall foo6 , CInt -> CInt -> IO CString
+#ccall foo7 , CString -> IO CString
+#ccall foo8 , CString -> IO CString
+#ccall foo9 , FunPtr CString -> IO CString
+#ccall foo10 , FunPtr (CInt -> CString) -> IO CString
+#ccall foo11 , FunPtr (Ptr ()) -> IO (Ptr ())
+#ccall foo12 , FunPtr (CInt -> Ptr ()) -> IO (Ptr ())
+#ccall foo13 , Ptr CChar -> IO CString
+#ccall foo14 , Ptr CChar -> IO CString
+#ccall foo15 , Ptr CChar -> IO CString
+#ccall foo16 , CInt -> IO CString
+#ccall foo17 , Ptr (Ptr CString) -> IO CInt
+#ccall foo18 , CUInt -> IO CInt
+#ccall foo19 , CUInt -> IO CInt
+#ccall foo20 , CUInt -> IO CInt
+#ccall foo21 , FunPtr (CInt -> CInt) -> IO CInt
+#ccall foo22 , FunPtr (CInt -> Ptr CInt) -> IO CInt
+#ccall foo23 , FunPtr (CInt -> Ptr (Ptr CInt)) -> IO CInt
+#ccall foo24 , FunPtr (CInt -> Ptr (Ptr (Ptr CInt))) -> IO CInt
+#ccall foo25 , CInt -> IO (Ptr CInt)
+#ccall foo26 , CInt -> IO (Ptr (Ptr CInt))
+#ccall foo27 , CInt -> IO (Ptr (Ptr (Ptr CInt)))
+#ccall foo28 , CSize -> IO (Ptr (Ptr (Ptr CInt)))
+{- struct bar1_t {
+    void * a;
+    int b;
+    char c;
+    char * d;
+    char * (* e)(void);
+    void (* f)(void *);
+    int * (* g)(void *);
+    int * * (* h)(void *);
+    int * * * (* i)(void *);
+    char j[2];
+    struct bar1_t * k;
+}; -}
+#starttype struct bar1_t
+#field a , Ptr ()
+#field b , CInt
+#field c , CChar
+#field d , CString
+#field e , FunPtr CString
+#field f , FunPtr (Ptr () -> IO ())
+#field g , FunPtr (Ptr () -> Ptr CInt)
+#field h , FunPtr (Ptr () -> Ptr (Ptr CInt))
+#field i , FunPtr (Ptr () -> Ptr (Ptr (Ptr CInt)))
+#array_field j , CChar
+#field k , Ptr <struct bar1_t>
+#stoptype
+{- typedef struct bar2_t {
+            int a;
+        } bar2_t; -}
+#starttype struct bar2_t
+#field a , CInt
+#stoptype
+#synonym_t bar2_t , <struct bar2_t>
+{- typedef struct {
+            int a;
+        } bar3_t; -}
+#starttype bar3_t
+#field a , CInt
+#stoptype
+{- enum {
+    BAZ1 = 1
+}; -}
+#num BAZ1
+{- typedef enum {
+            BAZ2 = 1
+        } baz2_t; -}
+#integral_t baz2_t
+#num BAZ2
+{- enum baz3_t {
+    BAZ3 = 1
+}; -}
+#integral_t enum baz3_t
+#num BAZ3
+{- typedef enum baz4_t {
+            BAZ4 = 1
+        } baz4_t; -}
+#integral_t enum baz4_t
+#num BAZ4
+#synonym_t baz4_t , <enum baz4_t>
+#globalvar global , CInt
+#cinline inline_foo , CInt -> Ptr CInt -> CInt -> Ptr CInt -> Ptr (Ptr CInt) -> Ptr (Ptr CInt) -> CSize -> IO CInt
+#include <bindings.cmacros.h>
+
+BC_INLINE7(inline_foo, int, int*, const int, const int*, const int**, const int* const*, size_t, int)
 |]
 
 matches :: String -> String -> IO ()
