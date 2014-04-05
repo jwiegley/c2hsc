@@ -18,6 +18,48 @@ tryAny = try
 main :: IO ()
 main = withStdoutLogging $ hspec $ do
     describe "issues" $ do
+        describe "#17" $ do
+            it "function pointer types" $
+                matches [here|
+typedef int (*foo)(int);
+|] [here|
+#callback foo , CInt -> IO CInt
+|]
+
+--             it "function pointer arrays" $
+--                 matches [here|
+-- int (*my_array[])(int);
+-- |] [here|
+-- #callback my_array_callback , CInt -> IO CInt
+-- #globalvar my_array , <my_array_callback>
+-- |]
+
+--             it "function pointer structure members" $
+--                 matches [here|
+-- struct foo_t {
+--     int (*foo_member)(int);
+-- };
+-- |] [here|
+-- {- struct foo_t {
+--     int (* foo_member)(int);
+-- }; -}
+-- #callback foo_member_callback , CInt -> IO CInt
+-- #starttype struct foo_t
+-- #field foo_member , <foo_member_callback>
+-- #stoptype
+-- |]
+
+--             it "function pointer function arguments" $
+--                 matches [here|
+-- void foo_function(int (*foo)(int)) {}
+-- |] [here|
+-- #callback foo_function_foo_callback , CInt -> IO CInt
+-- #cinline foo_function , <foo_function_foo_callback> -> IO ()
+-- #include <bindings.cmacros.h>
+
+-- BC_INLINE1VOID(foo_function, int, int)
+-- |]
+
         it "#15" $
             matches [here|
 typedef struct Foo_ Foo;
