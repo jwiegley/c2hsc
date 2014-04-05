@@ -171,24 +171,28 @@ unsigned long unsigned_long;
 |] [here|
 #globalvar unsigned_long , CULong
 |]
-        it "primitive type: long long" $ do
-            matches [here|
-long long ordinary_signed_long_long;
-|] [here|
-#globalvar ordinary_signed_long_long , CLlong
-|]
-        it "primitive type: signed long long" $ do
-            matches [here|
-signed long long explicit_signed_long_long;
-|] [here|
-#globalvar explicit_signed_long_long , CLlong
-|]
-        it "primitive type: unsigned long long" $ do
-            matches [here|
-unsigned long long unsigned_long_long;
-|] [here|
-#globalvar unsigned_long_long , CULlong
-|]
+
+-- jww (2014-04-05): language-c does not yet support "long long" types, although
+-- GHC's FFI does.
+--         it "primitive type: long long" $ do
+--             matches [here|
+-- long long ordinary_signed_long_long;
+-- |] [here|
+-- #globalvar ordinary_signed_long_long , CLLong
+-- |]
+--         it "primitive type: signed long long" $ do
+--             matches [here|
+-- signed long long explicit_signed_long_long;
+-- |] [here|
+-- #globalvar explicit_signed_long_long , CLLong
+-- |]
+--         it "primitive type: unsigned long long" $ do
+--             matches [here|
+-- unsigned long long unsigned_long_long;
+-- |] [here|
+-- #globalvar unsigned_long_long , CULLong
+-- |]
+
 -- // pointers
 --   // primitive types which cannot be signed
 --     void* ordinary_void_pointer;
