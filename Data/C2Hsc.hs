@@ -34,6 +34,8 @@ import           System.IO
 import           System.IO.Temp
 import           Text.PrettyPrint as P hiding ((<>))
 import           Text.StringTemplate
+
+--import           Debug.Trace
 
 data C2HscOptions = C2HscOptions
     { gcc          :: FilePath
@@ -112,8 +114,8 @@ defineTypeOverrides overridesFile = do
 
 overrideType :: String -> String -> Output ()
 overrideType cName ffiName =
-  defineType cName Typedef { typedefName     = ffiName
-                           , typedefOverride = True }
+  defineType cName $ Just Typedef { typedefName     = ffiName
+                                  , typedefOverride = True }
 
 defaultOverrides :: Output ()
 defaultOverrides = mapM_ (uncurry overrideType)
@@ -205,10 +207,20 @@ camelCase (x:xs)   = x : camelCase xs
 -- pure, and since the data sets involved are relatively small, performance is
 -- not a critical issue.
 
-data Typedef = Typedef { typedefName     :: String
-                       , typedefOverride :: Bool }
-type TypeMap   = M.Map String Typedef
-data HscOutput = HscOutput [String] [String] TypeMap
+data Typedef = Typedef
+    { typedefName     :: String
+    , typedefOverride :: Bool
+    }
+    deriving Show
+
+type TypeMap = M.Map String (Maybe Typedef)
+
+data HscOutput = HscOutput
+    { hoHsc     :: [String]
+    , hoHelperC :: [String]
+    , hoTypes   :: TypeMap
+    }
+
 type Output    = State HscOutput
 
 newHscState :: HscOutput
@@ -224,7 +236,7 @@ appendHelper helperc = do
   HscOutput xs helpercs types <- get
   put $ HscOutput xs (helpercs ++ [helperc]) types
 
-defineType :: String -> Typedef -> Output ()
+defineType :: String -> Maybe Typedef -> Output ()
 defineType key value = do
   HscOutput xs ys types <- get
   hasOverride <- fmap typedefOverride <$> lookupType key
@@ -235,7 +247,7 @@ defineType key value = do
 lookupType :: String -> Output (Maybe Typedef)
 lookupType key = do
   HscOutput _ _ types <- get
-  return $ M.lookup key types
+  return . join $ M.lookup key types
 
 -- Now we are ready to parse the C code from the preprocessed input stream,
 -- located in the given file and starting at the specified position.  The
@@ -306,9 +318,11 @@ appendNode fm dx@(CDeclExt (CDecl declSpecs items _)) =
                   unless (null dname || dname == "<" ++ nm ++ ">") $ do
                     when (declMatches fm dx) $
                       appendHsc $ "#synonym_t " ++ nm ++ " , " ++ dname
-
-                    defineType nm Typedef { typedefName     = dname
-                                          , typedefOverride = False }
+                    -- We saw the synonym, override the defineType just above
+                    defineType nm $ Just Typedef
+                        { typedefName     = dname
+                        , typedefOverride = False
+                        }
                 _ ->
                   when (declMatches fm dx) $ do
                     dname <- declSpecTypeName declSpecs
@@ -381,8 +395,10 @@ appendType declSpecs declrName = traverse_ appendType' declSpecs
   where
     appendType' (CTypeSpec (CSUType (CStruct tag ident decls _ _) _)) = do
       let name' = identName (structTagPrefix tag) ident
-      when (isNothing decls) $
+      seen <- M.member name' . hoTypes <$> get
+      when (isNothing decls && not seen) $ do
         appendHsc $ "#opaque_t " ++ name'
+        defineType name' Nothing
 
       for_ decls $ \xs -> do
         appendHsc $ "#starttype " ++ name'
