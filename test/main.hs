@@ -171,9 +171,24 @@ unsigned long unsigned_long;
 |] [here|
 #globalvar unsigned_long , CULong
 |]
---     long long ordinary_signed_long_long;
---     signed long long explicit_signed_long_long;
---     unsigned long long unsigned_long_long;
+        it "primitive type: long long" $ do
+            matches [here|
+long long ordinary_signed_long_long;
+|] [here|
+#globalvar ordinary_signed_long_long , CLlong
+|]
+        it "primitive type: signed long long" $ do
+            matches [here|
+signed long long explicit_signed_long_long;
+|] [here|
+#globalvar explicit_signed_long_long , CLlong
+|]
+        it "primitive type: unsigned long long" $ do
+            matches [here|
+unsigned long long unsigned_long_long;
+|] [here|
+#globalvar unsigned_long_long , CULlong
+|]
 -- // pointers
 --   // primitive types which cannot be signed
 --     void* ordinary_void_pointer;
