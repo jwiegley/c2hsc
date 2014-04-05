@@ -20,10 +20,43 @@ main :: IO ()
 main = withStdoutLogging $ hspec $ do
     describe "sanity tests" $ do
         it "maps fundamental types" $
-            [here|typedef int an_int;|]
-                `matches` [here|
+            matches [here|
+typedef int an_int;
+|] [here|
 {- typedef int an_int; -}
 #synonym_t an_int , CInt
+|]
+        it "handles issue #12" $
+            matches [here|
+struct st {
+  int i;
+};
+
+enum e {
+  CONST
+};
+
+union u {
+  char c;
+};
+|] [here|
+{- struct st {
+    int i;
+}; -}
+#starttype struct st
+#field i , CInt
+#stoptype
+{- enum e {
+    CONST
+}; -}
+#integral_t enum e
+#num CONST
+{- union u {
+    char c;
+}; -}
+#starttype union u
+#field c , CChar
+#stoptype
 |]
 
 matches :: String -> String -> IO ()
