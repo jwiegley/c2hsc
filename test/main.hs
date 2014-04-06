@@ -160,9 +160,15 @@ double ordinary_double;
 
         it "char" $
             matches [here|
-char ordinary_signed_char;
+char ordinary_char;
 |] [here|
-#globalvar ordinary_signed_char , CChar
+#globalvar ordinary_char , CChar
+|]
+        it "signed char" $
+            matches [here|
+unsigned char signed_char;
+|] [here|
+#globalvar signed_char , CSChar
 |]
         it "unsigned char" $
             matches [here|
@@ -274,17 +280,17 @@ unsigned long unsigned_long;
 -- |]
         describe "types which can be signed" $ do
             describe "char" $ do
-                it "ordinary_signed_char_pointer" $
+                it "ordinary_char_pointer" $
                     matches [here|
-          char *ordinary_signed_char_pointer;
+          char *ordinary_char_pointer;
 |] [here|
-#globalvar ordinary_signed_char_pointer , CChar
+#globalvar ordinary_char_pointer , CChar
 |]
-                it "explicit_signed_char_pointer" $
+                it "signed_char_pointer" $
                     matches [here|
-          signed char *explicit_signed_char_pointer;
+          signed char *signed_char_pointer;
 |] [here|
-#globalvar explicit_signed_char_pointer , CSChar
+#globalvar signed_char_pointer , CSChar
 |]
                 it "unsigned_char_pointer" $
                     matches [here|
