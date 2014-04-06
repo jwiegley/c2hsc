@@ -160,9 +160,15 @@ double ordinary_double;
 
         it "char" $
             matches [here|
-char ordinary_signed_char;
+char ordinary_char;
 |] [here|
-#globalvar ordinary_signed_char , CChar
+#globalvar ordinary_char , CChar
+|]
+        it "signed char" $
+            matches [here|
+signed char signed_char;
+|] [here|
+#globalvar signed_char , CSChar
 |]
         it "unsigned char" $
             matches [here|
@@ -253,19 +259,19 @@ unsigned long unsigned_long;
                 matches [here|
         void* ordinary_void_pointer;
 |] [here|
-#globalvar ordinary_void_pointer , 
+#globalvar ordinary_void_pointer , Ptr ()
 |]
             it "ordinary_float_pointer" $
                 matches [here|
         float* ordinary_float_pointer;
 |] [here|
-#globalvar ordinary_float_pointer , CFloat
+#globalvar ordinary_float_pointer , Ptr CFloat
 |]
             it "ordinary_double_pointer" $
                 matches [here|
         double* ordinary_double_pointer;
 |] [here|
-#globalvar ordinary_double_pointer , CDouble
+#globalvar ordinary_double_pointer , Ptr CDouble
 |]
 --             it "ordinary_long_double_pointer" $
 --                 matches [here|
@@ -274,100 +280,101 @@ unsigned long unsigned_long;
 -- |]
         describe "types which can be signed" $ do
             describe "char" $ do
-                it "ordinary_signed_char_pointer" $
+                it "ordinary_char_pointer" $
                     matches [here|
-          char *ordinary_signed_char_pointer;
+          char *ordinary_char_pointer;
 |] [here|
-#globalvar ordinary_signed_char_pointer , CChar
+#globalvar ordinary_char_pointer , Ptr CChar
 |]
-                it "explicit_signed_char_pointer" $
+                it "signed_char_pointer" $
                     matches [here|
-          signed char *explicit_signed_char_pointer;
+          signed char *signed_char_pointer;
 |] [here|
-#globalvar explicit_signed_char_pointer , CSChar
+#globalvar signed_char_pointer , Ptr CSChar
 |]
                 it "unsigned_char_pointer" $
                     matches [here|
           unsigned char *unsigned_char_pointer;
 |] [here|
-#globalvar unsigned_char_pointer , CUChar
+#globalvar unsigned_char_pointer , Ptr CUChar
 |]
             describe "short" $ do
                 it "ordinary_signed_short_pointer" $
                     matches [here|
           short *ordinary_signed_short_pointer;
 |] [here|
-#globalvar ordinary_signed_short_pointer , CShort
+#globalvar ordinary_signed_short_pointer , Ptr CShort
 |]
                 it "explicit_signed_short_pointer" $
                     matches [here|
           signed short *explicit_signed_short_pointer;
 |] [here|
-#globalvar explicit_signed_short_pointer , CShort
+#globalvar explicit_signed_short_pointer , Ptr CShort
 |]
                 it "unsigned_short_pointer" $
                     matches [here|
           unsigned short *unsigned_short_pointer;
 |] [here|
-#globalvar unsigned_short_pointer , CUShort
+#globalvar unsigned_short_pointer , Ptr CUShort
 |]
             describe "int" $ do
                 it "ordinary_signed_int_pointer" $
                     matches [here|
           int* ordinary_signed_int_pointer;
 |] [here|
-#globalvar ordinary_signed_int_pointer , CInt
+#globalvar ordinary_signed_int_pointer , Ptr CInt
 |]
                 it "explicit_signed_int_pointer" $
                     matches [here|
           signed int* explicit_signed_int_pointer;
 |] [here|
-#globalvar explicit_signed_int_pointer , CInt
+#globalvar explicit_signed_int_pointer , Ptr CInt
 |]
                 it "unsigned_int_pointer" $
                     matches [here|
           unsigned int* unsigned_int_pointer;
 |] [here|
-#globalvar unsigned_int_pointer , CUInt
+#globalvar unsigned_int_pointer , Ptr CUInt
 |]
             describe "long" $ do
                 it "ordinary_signed_long_pointer" $
                     matches [here|
           long *ordinary_signed_long_pointer;
 |] [here|
-#globalvar ordinary_signed_long_pointer , CLong
+#globalvar ordinary_signed_long_pointer , Ptr CLong
 |]
                 it "explicit_signed_long_pointer" $
                     matches [here|
           signed long *explicit_signed_long_pointer;
 |] [here|
-#globalvar explicit_signed_long_pointer , CLong
+#globalvar explicit_signed_long_pointer , Ptr CLong
 |]
                 it "unsigned_long_pointer" $
                     matches [here|
           unsigned long *unsigned_long_pointer;
 |] [here|
-#globalvar unsigned_long_pointer , CULong
+#globalvar unsigned_long_pointer , Ptr CULong
 |]
-            describe "long long" $ do
-                it "ordinary_signed_long_long_pointer" $
-                    matches [here|
-          long long* ordinary_signed_long_long_pointer;
-|] [here|
-#globalvar ordinary_signed_long_long_pointer , CLong
-|]
-                it "explicit_signed_long_long_pointer" $
-                    matches [here|
-          signed long long* explicit_signed_long_long_pointer;
-|] [here|
-#globalvar explicit_signed_long_long_pointer , CLong
-|]
-                it "unsigned_long_long_pointer" $
-                    matches [here|
-          unsigned long long* unsigned_long_long_pointer;
-|] [here|
-#globalvar unsigned_long_long_pointer , CULong
-|]
+-- language-c does not yet support "long long" types
+--             describe "long long" $ do
+--                 it "ordinary_signed_long_long_pointer" $
+--                     matches [here|
+--           long long* ordinary_signed_long_long_pointer;
+-- |] [here|
+-- #globalvar ordinary_signed_long_long_pointer , Ptr CLLong
+-- |]
+--                 it "explicit_signed_long_long_pointer" $
+--                     matches [here|
+--           signed long long* explicit_signed_long_long_pointer;
+-- |] [here|
+-- #globalvar explicit_signed_long_long_pointer , Ptr CLLong
+-- |]
+--                 it "unsigned_long_long_pointer" $
+--                     matches [here|
+--           unsigned long long* unsigned_long_long_pointer;
+-- |] [here|
+-- #globalvar unsigned_long_long_pointer , Ptr CULLong
+-- |]
 
     describe "arrays" $ do
         describe "primitive types which cannot be signed" $ do
@@ -375,19 +382,19 @@ unsigned long unsigned_long;
                 matches [here|
         float ordinary_float_array[10];
 |] [here|
-#globalvar ordinary_float_array , CFloat
+#globalarray ordinary_float_array , CFloat
 |]
             it "ordinary_double_array" $
                 matches [here|
         double ordinary_double_array[10];
 |] [here|
-#globalvar ordinary_double_array , CDouble
+#globalarray ordinary_double_array , CDouble
 |]
             it "ordinary_long_double_array" $
                 matches [here|
         long double ordinary_long_double_array[10];
 |] [here|
-#globalvar ordinary_long_double_array , CLong
+#globalarray ordinary_long_double_array , CLong
 |]
         describe "types which can be signed" $ do
             describe "char" $ do
@@ -395,121 +402,122 @@ unsigned long unsigned_long;
                     matches [here|
           char ordinary_signed_char_array[10];
 |] [here|
-#globalvar ordinary_signed_char_array , CChar
+#globalarray ordinary_signed_char_array , CChar
 |]
                 it "explicit_signed_char_array" $
                     matches [here|
           signed char explicit_signed_char_array[10];
 |] [here|
-#globalvar explicit_signed_char_array , CSChar
+#globalarray explicit_signed_char_array , CSChar
 |]
                 it "unsigned_char_array" $
                     matches [here|
           unsigned char unsigned_char_array[10];
 |] [here|
-#globalvar unsigned_char_array , CUChar
+#globalarray unsigned_char_array , CUChar
 |]
             describe "short" $ do
                 it "ordinary_signed_short_array" $
                     matches [here|
           short ordinary_signed_short_array[10];
 |] [here|
-#globalvar ordinary_signed_short_array , CShort
+#globalarray ordinary_signed_short_array , CShort
 |]
                 it "explicit_signed_short_array" $
                     matches [here|
           signed short explicit_signed_short_array[10];
 |] [here|
-#globalvar explicit_signed_short_array , CShort
+#globalarray explicit_signed_short_array , CShort
 |]
                 it "unsigned_short_array" $
                     matches [here|
           unsigned short unsigned_short_array[10];
 |] [here|
-#globalvar unsigned_short_array , CUShort
+#globalarray unsigned_short_array , CUShort
 |]
             describe "int" $ do
                 it "ordinary_signed_int_array" $
                     matches [here|
           int ordinary_signed_int_array[10];
 |] [here|
-#globalvar ordinary_signed_int_array , CInt
+#globalarray ordinary_signed_int_array , CInt
 |]
                 it "explicit_signed_int_array" $
                     matches [here|
           signed int explicit_signed_int_array[10];
 |] [here|
-#globalvar explicit_signed_int_array , CInt
+#globalarray explicit_signed_int_array , CInt
 |]
                 it "unsigned_int_array" $
                     matches [here|
           unsigned int unsigned_int_array[10];
 |] [here|
-#globalvar unsigned_int_array , CUInt
+#globalarray unsigned_int_array , CUInt
 |]
             describe "long" $ do
                 it "ordinary_signed_long_array" $
                     matches [here|
           long ordinary_signed_long_array[10];
 |] [here|
-#globalvar ordinary_signed_long_array , CLong
+#globalarray ordinary_signed_long_array , CLong
 |]
                 it "explicit_signed_long_array" $
                     matches [here|
           signed long explicit_signed_long_array[10];
 |] [here|
-#globalvar explicit_signed_long_array , CLong
+#globalarray explicit_signed_long_array , CLong
 |]
                 it "unsigned_long_array" $
                     matches [here|
           unsigned long unsigned_long_array[10];
 |] [here|
-#globalvar unsigned_long_array , CULong
+#globalarray unsigned_long_array , CULong
 |]
-            describe "long long" $ do
-                it "ordinary_signed_long_long_array" $
-                    matches [here|
-          long long ordinary_signed_long_long_array[10];
-|] [here|
-#globalvar ordinary_signed_long_long_array , CLong
-|]
-                it "explicit_signed_long_long_array" $
-                    matches [here|
-          signed long long explicit_signed_long_long_array[10];
-|] [here|
-#globalvar explicit_signed_long_long_array , CLong
-|]
-                it "unsigned_long_long_array" $
-                    matches [here|
-          unsigned long long unsigned_long_long_array[10];
-|] [here|
-#globalvar unsigned_long_long_array , CULong
-|]
+-- language-c does not yet support "long long" types
+--             describe "long long" $ do
+--                 it "ordinary_signed_long_long_array" $
+--                     matches [here|
+--           long long ordinary_signed_long_long_array[10];
+-- |] [here|
+-- #globalarray ordinary_signed_long_long_array , CLLong
+-- |]
+--                 it "explicit_signed_long_long_array" $
+--                     matches [here|
+--           signed long long explicit_signed_long_long_array[10];
+-- |] [here|
+-- #globalarray explicit_signed_long_long_array , CLLong
+-- |]
+--                 it "unsigned_long_long_array" $
+--                     matches [here|
+--           unsigned long long unsigned_long_long_array[10];
+-- |] [here|
+-- #globalarray unsigned_long_long_array , CULLong
+-- |]
         describe "pointers" $ do
             describe "primitive types which cannot be signed" $ do
                 it "ordinary_void_pointer_array" $
                     matches [here|
           void* ordinary_void_pointer_array[10];
 |] [here|
-#globalvar ordinary_void_pointer_array ,
+#globalarray ordinary_void_pointer_array , Ptr ()
 |]
                 it "ordinary_float_pointer_array" $
                     matches [here|
           float* ordinary_float_pointer_array[10];
 |] [here|
-#globalvar ordinary_float_pointer_array , CFloat
+#globalarray ordinary_float_pointer_array , Ptr CFloat
 |]
                 it "ordinary_double_pointer_array" $
                     matches [here|
           double* ordinary_double_pointer_array[10];
 |] [here|
-#globalvar ordinary_double_pointer_array , CDouble
+#globalarray ordinary_double_pointer_array , Ptr CDouble
 |]
                 it "ordinary_long_double_pointer_array" $
                     matches [here|
           long double* ordinary_long_double_pointer_array[10];
 |] [here|
-#globalvar ordinary_long_double_pointer_array , CLong
+#globalarray ordinary_long_double_pointer_array , Ptr CLong
 |]
             describe "types which can be signed" $ do
                 describe "char" $ do
@@ -517,96 +525,97 @@ unsigned long unsigned_long;
                         matches [here|
             char *ordinary_signed_char_pointer_array[10];
 |] [here|
-#globalvar ordinary_signed_char_pointer_array , CChar
+#globalarray ordinary_signed_char_pointer_array , Ptr CChar
 |]
                     it "explicit_signed_char_pointer_array" $
                         matches [here|
             signed char *explicit_signed_char_pointer_array[10];
 |] [here|
-#globalvar explicit_signed_char_pointer_array , CSChar
+#globalarray explicit_signed_char_pointer_array , Ptr CSChar
 |]
                     it "unsigned_char_pointer_array" $
                         matches [here|
             unsigned char *unsigned_char_pointer_array[10];
 |] [here|
-#globalvar unsigned_char_pointer_array , CUChar
+#globalarray unsigned_char_pointer_array , Ptr CUChar
 |]
                 describe "short" $ do
                     it "ordinary_signed_short_pointer_array" $
                         matches [here|
             short *ordinary_signed_short_pointer_array[10];
 |] [here|
-#globalvar ordinary_signed_short_pointer_array , CShort
+#globalarray ordinary_signed_short_pointer_array , Ptr CShort
 |]
                     it "explicit_signed_short_pointer_array" $
                         matches [here|
             signed short *explicit_signed_short_pointer_array[10];
 |] [here|
-#globalvar explicit_signed_short_pointer_array , CShort
+#globalarray explicit_signed_short_pointer_array , Ptr CShort
 |]
                     it "unsigned_short_pointer_array" $
                         matches [here|
             unsigned short *unsigned_short_pointer_array[10];
 |] [here|
-#globalvar unsigned_short_pointer_array , CUShort
+#globalarray unsigned_short_pointer_array , Ptr CUShort
 |]
                 describe "int" $ do
                     it "ordinary_signed_int_pointer_array" $
                         matches [here|
             int* ordinary_signed_int_pointer_array[10];
 |] [here|
-#globalvar ordinary_signed_int_pointer_array , CInt
+#globalarray ordinary_signed_int_pointer_array , Ptr CInt
 |]
                     it "explicit_signed_int_pointer_array" $
                         matches [here|
             signed int* explicit_signed_int_pointer_array[10];
 |] [here|
-#globalvar explicit_signed_int_pointer_array , CInt
+#globalarray explicit_signed_int_pointer_array , Ptr CInt
 |]
                     it "unsigned_int_pointer_array" $
                         matches [here|
             unsigned int* unsigned_int_pointer_array[10];
 |] [here|
-#globalvar unsigned_int_pointer_array , CUInt
+#globalarray unsigned_int_pointer_array , Ptr CUInt
 |]
                 describe "long" $ do
                     it "ordinary_signed_long_pointer_array" $
                         matches [here|
             long *ordinary_signed_long_pointer_array[10];
 |] [here|
-#globalvar ordinary_signed_long_pointer_array , CLong
+#globalarray ordinary_signed_long_pointer_array , Ptr CLong
 |]
                     it "explicit_signed_long_pointer_array" $
                         matches [here|
             signed long *explicit_signed_long_pointer_array[10];
 |] [here|
-#globalvar explicit_signed_long_pointer_array , CLong
+#globalarray explicit_signed_long_pointer_array , Ptr CLong
 |]
                     it "unsigned_long_pointer_array" $
                         matches [here|
             unsigned long *unsigned_long_pointer_array[10];
 |] [here|
-#globalvar unsigned_long_pointer_array , CULong
+#globalarray unsigned_long_pointer_array , Ptr CULong
 |]
-                describe "long long" $ do
-                    it "ordinary_signed_long_long_pointer_array" $
-                        matches [here|
-            long long* ordinary_signed_long_long_pointer_array[10];
-|] [here|
-#globalvar ordinary_signed_long_long_pointer_array , CLong
-|]
-                    it "explicit_signed_long_long_pointer_array" $
-                        matches [here|
-            signed long long* explicit_signed_long_long_pointer_array[10];
-|] [here|
-#globalvar explicit_signed_long_long_pointer_array , CLong
-|]
-                    it "unsigned_long_long_pointer_array" $
-                        matches [here|
-            unsigned long long* unsigned_long_long_pointer_array[10];
-|] [here|
-#globalvar unsigned_long_long_pointer_array , CULong
-|]
+-- language-c does not yet support "long long" types
+--                 describe "long long" $ do
+--                     it "ordinary_signed_long_long_pointer_array" $
+--                         matches [here|
+--             long long* ordinary_signed_long_long_pointer_array[10];
+-- |] [here|
+-- #globalarray ordinary_signed_long_long_pointer_array , Ptr CLLong
+-- |]
+--                     it "explicit_signed_long_long_pointer_array" $
+--                         matches [here|
+--             signed long long* explicit_signed_long_long_pointer_array[10];
+-- |] [here|
+-- #globalarray explicit_signed_long_long_pointer_array , Ptr CLLong
+-- |]
+--                     it "unsigned_long_long_pointer_array" $
+--                         matches [here|
+--             unsigned long long* unsigned_long_long_pointer_array[10];
+-- |] [here|
+-- #globalarray unsigned_long_long_pointer_array , Ptr CULLong
+-- |]
 
     describe "structs" $ do
         describe "primitive types which cannot be signed" $ do
@@ -780,40 +789,41 @@ unsigned long unsigned_long;
 #field unsigned_long_member , CULong
 #stoptype
 |]
-            describe "long long" $ do
-                it "ordinary_signed_long_long_struct" $
-                    matches [here|
-          struct ordinary_signed_long_long_struct {long long ordinary_signed_long_long_member;};
-|] [here|
-{- struct ordinary_signed_long_long_struct {
-    long long ordinary_signed_long_long_member;
-}; -}
-#starttype struct ordinary_signed_long_long_struct
-#field ordinary_signed_long_long_member , CLong
-#stoptype
-|]
-                it "explicit_signed_long_long_struct" $
-                    matches [here|
-          struct explicit_signed_long_long_struct {signed long long explicit_signed_long_long_member;};
-|] [here|
-{- struct explicit_signed_long_long_struct {
-    signed long long explicit_signed_long_long_member;
-}; -}
-#starttype struct explicit_signed_long_long_struct
-#field explicit_signed_long_long_member , CLong
-#stoptype
-|]
-                it "unsigned_long_long_struct" $
-                    matches [here|
-          struct unsigned_long_long_struct {unsigned long long unsigned_long_long_member;};
-|] [here|
-{- struct unsigned_long_long_struct {
-    unsigned long long unsigned_long_long_member;
-}; -}
-#starttype struct unsigned_long_long_struct
-#field unsigned_long_long_member , CULong
-#stoptype
-|]
+-- language-c does not yet support "long long" types
+--             describe "long long" $ do
+--                 it "ordinary_signed_long_long_struct" $
+--                     matches [here|
+--           struct ordinary_signed_long_long_struct {long long ordinary_signed_long_long_member;};
+-- |] [here|
+-- {- struct ordinary_signed_long_long_struct {
+--     long long ordinary_signed_long_long_member;
+-- }; -}
+-- #starttype struct ordinary_signed_long_long_struct
+-- #field ordinary_signed_long_long_member , CLLong
+-- #stoptype
+-- |]
+--                 it "explicit_signed_long_long_struct" $
+--                     matches [here|
+--           struct explicit_signed_long_long_struct {signed long long explicit_signed_long_long_member;};
+-- |] [here|
+-- {- struct explicit_signed_long_long_struct {
+--     signed long long explicit_signed_long_long_member;
+-- }; -}
+-- -- #starttype struct explicit_signed_long_long_struct
+-- -- #field explicit_signed_long_long_member , CLLLong
+-- -- #stoptype
+-- -- |]
+-- --                 it "unsigned_long_long_struct" $
+-- --                     matches [here|
+-- --           struct unsigned_long_long_struct {unsigned long long unsigned_long_long_member;};
+-- -- |] [here|
+-- {- struct unsigned_long_long_struct {
+--     unsigned long long unsigned_long_long_member;
+-- }; -}
+-- #starttype struct unsigned_long_long_struct
+-- #field unsigned_long_long_member , CULLong
+-- #stoptype
+-- |]
         describe "pointers" $ do
             describe "primitive types which cannot be signed" $ do
                 it "ordinary_void_pointer_struct" $
@@ -870,7 +880,7 @@ unsigned long unsigned_long;
     char * ordinary_signed_char_pointer_member;
 }; -}
 #starttype struct ordinary_signed_char_pointer_struct
-#field ordinary_signed_char_pointer_member , CString
+#field ordinary_signed_char_pointer_member , Ptr CString
 #stoptype
 |]
                     it "explicit_signed_char_pointer_struct" $
@@ -997,40 +1007,41 @@ unsigned long unsigned_long;
 #field unsigned_long_pointer_member , Ptr CULong
 #stoptype
 |]
-                describe "long long" $ do
-                    it "ordinary_signed_long_long_pointer_struct" $
-                        matches [here|
-            struct ordinary_signed_long_long_pointer_struct {long long* ordinary_signed_long_long_pointer_member;};
-|] [here|
-{- struct ordinary_signed_long_long_pointer_struct {
-    long long * ordinary_signed_long_long_pointer_member;
-}; -}
-#starttype struct ordinary_signed_long_long_pointer_struct
-#field ordinary_signed_long_long_pointer_member , Ptr CLong
-#stoptype
-|]
-                    it "explicit_signed_long_long_pointer_struct" $
-                        matches [here|
-            struct explicit_signed_long_long_pointer_struct {signed long long* explicit_signed_long_long_pointer_member;};
-|] [here|
-{- struct explicit_signed_long_long_pointer_struct {
-    signed long long * explicit_signed_long_long_pointer_member;
-}; -}
-#starttype struct explicit_signed_long_long_pointer_struct
-#field explicit_signed_long_long_pointer_member , Ptr CLong
-#stoptype
-|]
-                    it "unsigned_long_long_pointer_struct" $
-                        matches [here|
-            struct unsigned_long_long_pointer_struct {unsigned long long* unsigned_long_long_pointer_member;};
-|] [here|
-{- struct unsigned_long_long_pointer_struct {
-    unsigned long long * unsigned_long_long_pointer_member;
-}; -}
-#starttype struct unsigned_long_long_pointer_struct
-#field unsigned_long_long_pointer_member , Ptr CULong
-#stoptype
-|]
+-- language-c does not yet support "long long" types
+--                 describe "long long" $ do
+--                     it "ordinary_signed_long_long_pointer_struct" $
+--                         matches [here|
+--             struct ordinary_signed_long_long_pointer_struct {long long* ordinary_signed_long_long_pointer_member;};
+-- |] [here|
+-- {- struct ordinary_signed_long_long_pointer_struct {
+--     long long * ordinary_signed_long_long_pointer_member;
+-- }; -}
+-- #starttype struct ordinary_signed_long_long_pointer_struct
+-- #field ordinary_signed_long_long_pointer_member , Ptr CLLong
+-- #stoptype
+-- |]
+--                     it "explicit_signed_long_long_pointer_struct" $
+--                         matches [here|
+--             struct explicit_signed_long_long_pointer_struct {signed long long* explicit_signed_long_long_pointer_member;};
+-- |] [here|
+-- {- struct explicit_signed_long_long_pointer_struct {
+--     signed long long * explicit_signed_long_long_pointer_member;
+-- }; -}
+-- #starttype struct explicit_signed_long_long_pointer_struct
+-- #field explicit_signed_long_long_pointer_member , Ptr CLLong
+-- #stoptype
+-- |]
+--                     it "unsigned_long_long_pointer_struct" $
+--                         matches [here|
+--             struct unsigned_long_long_pointer_struct {unsigned long long* unsigned_long_long_pointer_member;};
+-- |] [here|
+-- {- struct unsigned_long_long_pointer_struct {
+--     unsigned long long * unsigned_long_long_pointer_member;
+-- }; -}
+-- #starttype struct unsigned_long_long_pointer_struct
+-- #field unsigned_long_long_pointer_member , Ptr CULLong
+-- #stoptype
+-- |]
             describe "arrays" $ do
                 describe "primitive types which cannot be signed" $ do
                     it "ordinary_float_array_struct" $
@@ -1203,40 +1214,41 @@ unsigned long unsigned_long;
 #array_field unsigned_long_array_member , CULong
 #stoptype
 |]
-                describe "long long" $ do
-                    it "ordinary_signed_long_long_array_struct" $
-                        matches [here|
-            struct ordinary_signed_long_long_array_struct {long long ordinary_signed_long_long_array_member[10];};
-|] [here|
-{- struct ordinary_signed_long_long_array_struct {
-    long long ordinary_signed_long_long_array_member[10];
-}; -}
-#starttype struct ordinary_signed_long_long_array_struct
-#array_field ordinary_signed_long_long_array_member , CLong
-#stoptype
-|]
-                    it "explicit_signed_long_long_array_struct" $
-                        matches [here|
-            struct explicit_signed_long_long_array_struct {signed long long explicit_signed_long_long_array_member[10];};
-|] [here|
-{- struct explicit_signed_long_long_array_struct {
-    signed long long explicit_signed_long_long_array_member[10];
-}; -}
-#starttype struct explicit_signed_long_long_array_struct
-#array_field explicit_signed_long_long_array_member , CLong
-#stoptype
-|]
-                    it "unsigned_long_long_array_struct" $
-                        matches [here|
-            struct unsigned_long_long_array_struct {unsigned long long unsigned_long_long_array_member[10];};
-|] [here|
-{- struct unsigned_long_long_array_struct {
-    unsigned long long unsigned_long_long_array_member[10];
-}; -}
-#starttype struct unsigned_long_long_array_struct
-#array_field unsigned_long_long_array_member , CULong
-#stoptype
-|]
+-- language-c does not yet support "long long" types
+--                 describe "long long" $ do
+--                     it "ordinary_signed_long_long_array_struct" $
+--                         matches [here|
+--             struct ordinary_signed_long_long_array_struct {long long ordinary_signed_long_long_array_member[10];};
+-- |] [here|
+-- {- struct ordinary_signed_long_long_array_struct {
+--     long long ordinary_signed_long_long_array_member[10];
+-- }; -}
+-- #starttype struct ordinary_signed_long_long_array_struct
+-- #array_field ordinary_signed_long_long_array_member , CLLong
+-- #stoptype
+-- |]
+--                     it "explicit_signed_long_long_array_struct" $
+--                         matches [here|
+--             struct explicit_signed_long_long_array_struct {signed long long explicit_signed_long_long_array_member[10];};
+-- |] [here|
+-- {- struct explicit_signed_long_long_array_struct {
+--     signed long long explicit_signed_long_long_array_member[10];
+-- }; -}
+-- #starttype struct explicit_signed_long_long_array_struct
+-- #array_field explicit_signed_long_long_array_member , CLLong
+-- #stoptype
+-- |]
+--                     it "unsigned_long_long_array_struct" $
+--                         matches [here|
+--             struct unsigned_long_long_array_struct {unsigned long long unsigned_long_long_array_member[10];};
+-- |] [here|
+-- {- struct unsigned_long_long_array_struct {
+--     unsigned long long unsigned_long_long_array_member[10];
+-- }; -}
+-- #starttype struct unsigned_long_long_array_struct
+-- #array_field unsigned_long_long_array_member , CULLong
+-- #stoptype
+-- |]
             describe "pointers" $ do
                 describe "primitive types which cannot be signed" $ do
                     it "ordinary_void_pointer_array_struct" $
@@ -1293,7 +1305,7 @@ unsigned long unsigned_long;
     char * ordinary_signed_char_pointer_array_member[10];
 }; -}
 #starttype struct ordinary_signed_char_pointer_array_struct
-#array_field ordinary_signed_char_pointer_array_member , CString
+#array_field ordinary_signed_char_pointer_array_member , Ptr CString
 #stoptype
 |]
                         it "explicit_signed_char_pointer_array_struct" $
@@ -1420,40 +1432,41 @@ unsigned long unsigned_long;
 #array_field unsigned_long_pointer_array_member , Ptr CULong
 #stoptype
 |]
-                    describe "long long" $ do
-                        it "ordinary_signed_long_long_pointer_array_struct" $
-                            matches [here|
-              struct ordinary_signed_long_long_pointer_array_struct {long long* ordinary_signed_long_long_pointer_array_member[10];};
-|] [here|
-{- struct ordinary_signed_long_long_pointer_array_struct {
-    long long * ordinary_signed_long_long_pointer_array_member[10];
-}; -}
-#starttype struct ordinary_signed_long_long_pointer_array_struct
-#array_field ordinary_signed_long_long_pointer_array_member , Ptr CLong
-#stoptype
-|]
-                        it "explicit_signed_long_long_pointer_array_struct" $
-                            matches [here|
-              struct explicit_signed_long_long_pointer_array_struct {signed long long* explicit_signed_long_long_pointer_array_member[10];};
-|] [here|
-{- struct explicit_signed_long_long_pointer_array_struct {
-    signed long long * explicit_signed_long_long_pointer_array_member[10];
-}; -}
-#starttype struct explicit_signed_long_long_pointer_array_struct
-#array_field explicit_signed_long_long_pointer_array_member , Ptr CLong
-#stoptype
-|]
-                        it "unsigned_long_long_pointer_array_struct" $
-                            matches [here|
-              struct unsigned_long_long_pointer_array_struct {unsigned long long* unsigned_long_long_pointer_array_member[10];};
-|] [here|
-{- struct unsigned_long_long_pointer_array_struct {
-    unsigned long long * unsigned_long_long_pointer_array_member[10];
-}; -}
-#starttype struct unsigned_long_long_pointer_array_struct
-#array_field unsigned_long_long_pointer_array_member , Ptr CULong
-#stoptype
-|]
+-- language-c does not yet support "long long" types
+--                     describe "long long" $ do
+--                         it "ordinary_signed_long_long_pointer_array_struct" $
+--                             matches [here|
+--               struct ordinary_signed_long_long_pointer_array_struct {long long* ordinary_signed_long_long_pointer_array_member[10];};
+-- |] [here|
+-- {- struct ordinary_signed_long_long_pointer_array_struct {
+--     long long * ordinary_signed_long_long_pointer_array_member[10];
+-- }; -}
+-- #starttype struct ordinary_signed_long_long_pointer_array_struct
+-- #array_field ordinary_signed_long_long_pointer_array_member , Ptr CLLong
+-- #stoptype
+-- |]
+--                         it "explicit_signed_long_long_pointer_array_struct" $
+--                             matches [here|
+--               struct explicit_signed_long_long_pointer_array_struct {signed long long* explicit_signed_long_long_pointer_array_member[10];};
+-- |] [here|
+-- {- struct explicit_signed_long_long_pointer_array_struct {
+--     signed long long * explicit_signed_long_long_pointer_array_member[10];
+-- }; -}
+-- #starttype struct explicit_signed_long_long_pointer_array_struct
+-- #array_field explicit_signed_long_long_pointer_array_member , Ptr CLLong
+-- #stoptype
+-- |]
+--                         it "unsigned_long_long_pointer_array_struct" $
+--                             matches [here|
+--               struct unsigned_long_long_pointer_array_struct {unsigned long long* unsigned_long_long_pointer_array_member[10];};
+-- |] [here|
+-- {- struct unsigned_long_long_pointer_array_struct {
+--     unsigned long long * unsigned_long_long_pointer_array_member[10];
+-- }; -}
+-- #starttype struct unsigned_long_long_pointer_array_struct
+-- #array_field unsigned_long_long_pointer_array_member , Ptr CULLong
+-- #stoptype
+-- |]
 
     describe "sanity check" $ do
         it "maps a typedef" $
