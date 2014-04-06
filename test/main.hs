@@ -166,7 +166,7 @@ char ordinary_char;
 |]
         it "signed char" $
             matches [here|
-unsigned char signed_char;
+signed char signed_char;
 |] [here|
 #globalvar signed_char , CSChar
 |]
