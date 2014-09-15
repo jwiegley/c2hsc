@@ -1,12 +1,14 @@
 module Main where
 
-import Control.Logging hiding (debug)
-import Control.Monad hiding (sequence)
-import Data.C2Hsc (C2HscOptions(..), runArgs)
-import Data.List as L
-import Prelude hiding (concat, sequence, mapM, mapM_, foldr)
-import System.Console.CmdArgs
-import System.Environment
+import           Control.Logging hiding (debug)
+import           Control.Monad hiding (sequence)
+import           Data.C2Hsc (C2HscOptions(..), runArgs)
+import qualified Data.C2Hsc.BindingsDSL as BD
+import qualified Data.C2Hsc.IvoryDSL as I
+import           Data.List as L
+import           Prelude hiding (concat, sequence, mapM, mapM_, foldr)
+import           System.Console.CmdArgs
+import           System.Environment
 
 version :: String
 version = "0.7.0"
@@ -33,6 +35,8 @@ c2hscOptions = C2HscOptions
                   &= help "Report progress verbosely"
     , debug     = def &= name "D"
                   &= help "Report debug information"
+    , ivory     = def &= name "i"
+                  &= help "Emit types using Ivory syntax"
     , files     = def &= args &= typFile } &=
     summary c2hscSummary &=
     program "c2hsc" &=
@@ -45,6 +49,9 @@ c2hscOptions = C2HscOptions
 
 main :: IO ()
 main = getArgs >>= \mainArgs -> do
-  opts <- withArgs (if null mainArgs then ["--help"] else mainArgs)
-          (cmdArgs c2hscOptions)
-  withStderrLogging $ runArgs opts Nothing False
+    opts <- withArgs (if null mainArgs then ["--help"] else mainArgs)
+                     (cmdArgs c2hscOptions)
+    withStderrLogging $ runArgs opts (go opts) Nothing False
+  where
+    go opts | ivory opts = I.appendNode
+            | otherwise  = BD.appendNode

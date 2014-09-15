@@ -3,14 +3,19 @@
 
 module Main where
 
-import Control.Exception
-import Control.Logging
-import Data.C2Hsc
-import Data.Char
-import Data.String.Here
-import Data.Text (Text, pack)
-import Prelude hiding (log)
-import Test.Hspec
+import           Control.Exception
+import           Control.Logging
+import           Data.C2Hsc
+import qualified Data.C2Hsc.BindingsDSL as BD
+import           Data.Char
+import qualified Data.Default as Default
+import           Data.String.Here
+import           Data.Text (Text, pack)
+import           Prelude hiding (log)
+import           System.Directory
+import           System.IO
+import           System.IO.Temp
+import           Test.Hspec
 
 tryAny :: IO a -> IO (Either SomeException a)
 tryAny = try
@@ -1654,6 +1659,20 @@ inline int inline_foo(int a, int * b, const int c, const int * d,
 
 BC_INLINE7(inline_foo, int, int*, const int, const int*, const int**, const int* const*, size_t, int)
 |]
+
+-- This function is used for debugging
+processString :: String -> IO String
+processString str = do
+    tmpDir <- getTemporaryDirectory
+    withTempFile tmpDir "c2hsc.src" $ \path h -> do
+        hPutStr h str
+        hClose h
+        withTempFile tmpDir "c2hsc.out" $ \outPath outH -> do
+            runArgs Default.def { files  = [path]
+                                , prefix = "Spec"
+                                } BD.appendNode (Just outH) True
+            hClose outH
+            readFile outPath
 
 matches :: String -> String -> IO ()
 matches input output = do

@@ -1,5 +1,6 @@
 { cabal, cmdargs, filepath, HStringTemplate, languageC, mtl, split
-, transformers
+, transformers, dataDefault, hspec, logging, monadLogger, temporary
+, here
 }:
 
 cabal.mkDerivation (self: {
@@ -10,6 +11,10 @@ cabal.mkDerivation (self: {
   isExecutable = true;
   buildDepends = [
     cmdargs filepath HStringTemplate languageC mtl split transformers
+    dataDefault
+  ];
+  testDepends = [
+    here hspec logging monadLogger temporary
   ];
   meta = {
     homepage = "https://github.com/jwiegley/c2hsc";
