@@ -303,10 +303,15 @@ appendNode fm dx@(CDeclExt (CDecl declSpecs items _)) =
               when (declMatches fm dx) $
                 appendFunc "#ccall" declSpecs declrtr'
 
-            CArrDeclr{}:_ ->
+            CArrDeclr{}:CPtrDeclr{}:_ ->
               when (declMatches fm dx) $ do
                 dname <- declSpecTypeName declSpecs
                 appendHsc $ "#globalarray " ++ nm ++ " , Ptr " ++ tyParens dname
+
+            CArrDeclr{}:_ ->
+              when (declMatches fm dx) $ do
+                dname <- declSpecTypeName declSpecs
+                appendHsc $ "#globalarray " ++ nm ++ " , " ++ tyParens dname
 
             CPtrDeclr{}:_ ->
               when (declMatches fm dx) $ do
