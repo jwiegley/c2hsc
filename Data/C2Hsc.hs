@@ -303,6 +303,16 @@ appendNode fm dx@(CDeclExt (CDecl declSpecs items _)) =
               when (declMatches fm dx) $
                 appendFunc "#ccall" declSpecs declrtr'
 
+            CArrDeclr{}:_ ->
+              when (declMatches fm dx) $ do
+                dname <- declSpecTypeName declSpecs
+                appendHsc $ "#globalarray " ++ nm ++ " , Ptr " ++ tyParens dname
+
+            CPtrDeclr{}:_ ->
+              when (declMatches fm dx) $ do
+                dname <- declSpecTypeName declSpecs
+                appendHsc $ "#globalvar " ++ nm ++ " , Ptr " ++ tyParens dname
+
             _ ->
               -- If the type is a typedef, record the equivalence so we can
               -- look it up later
@@ -321,10 +331,11 @@ appendNode fm dx@(CDeclExt (CDecl declSpecs items _)) =
                         { typedefName     = dname
                         , typedefOverride = False
                         }
+
                 _ ->
                   when (declMatches fm dx) $ do
                     dname <- declSpecTypeName declSpecs
-                    appendHsc $ "#globalvar " ++ nm ++ " , " ++ dname
+                    appendHsc $ "#globalvar " ++ nm ++ " , " ++ tyParens dname
   where
     splitDecl declrtr = do      -- in the Maybe Monad
       d@(CDeclr ident ddrs _ _ _) <- declrtr

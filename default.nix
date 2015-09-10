@@ -1,20 +1,25 @@
-{ cabal, cmdargs, filepath, HStringTemplate, languageC, mtl, split
+{ mkDerivation, base, cmdargs, containers, data-default, directory
+, filepath, here, hspec, HStringTemplate, language-c, logging
+, monad-logger, mtl, pretty, split, stdenv, temporary, text
 , transformers
 }:
-
-cabal.mkDerivation (self: {
+mkDerivation {
   pname = "c2hsc";
-  version = "0.6.5";
-  sha256 = "0c5hzi4nw9n3ir17swbwymkymnpiw958z8r2hw6656ijwqkxvzgd";
-  isLibrary = false;
+  version = "0.7.0";
+  src = ./.;
+  isLibrary = true;
   isExecutable = true;
-  buildDepends = [
-    cmdargs filepath HStringTemplate languageC mtl split transformers
+  libraryHaskellDepends = [
+    base containers data-default directory filepath HStringTemplate
+    language-c logging mtl pretty split temporary text transformers
   ];
-  meta = {
-    homepage = "https://github.com/jwiegley/c2hsc";
-    description = "Convert C API header files to .hsc and .hsc.helper.c files";
-    license = self.stdenv.lib.licenses.bsd3;
-    platforms = self.ghc.meta.platforms;
-  };
-})
+  executableHaskellDepends = [
+    base cmdargs containers data-default directory filepath
+    HStringTemplate language-c logging pretty split temporary text
+    transformers
+  ];
+  testHaskellDepends = [ base here hspec logging monad-logger text ];
+  homepage = "https://github.com/jwiegley/c2hsc";
+  description = "Convert C API header files to .hsc and .hsc.helper.c files";
+  license = stdenv.lib.licenses.bsd3;
+}
