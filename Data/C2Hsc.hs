@@ -18,6 +18,7 @@ import           Data.Maybe
 import           Data.Monoid
 import           Data.Text (pack)
 import           Data.Traversable hiding (mapM, forM)
+import           Debug.Trace
 import           Language.C.Data.Ident
 import           Language.C.Data.InputStream
 import           Language.C.Data.Node
@@ -305,17 +306,17 @@ appendNode fm dx@(CDeclExt (CDecl declSpecs items _)) =
 
             CArrDeclr{}:CPtrDeclr{}:_ ->
               when (declMatches fm dx) $ do
-                dname <- declSpecTypeName declSpecs
+                dname <- declSpecTypeName True declSpecs
                 appendHsc $ "#globalarray " ++ nm ++ " , Ptr " ++ tyParens dname
 
             CArrDeclr{}:_ ->
               when (declMatches fm dx) $ do
-                dname <- declSpecTypeName declSpecs
+                dname <- declSpecTypeName True declSpecs
                 appendHsc $ "#globalarray " ++ nm ++ " , " ++ tyParens dname
 
             CPtrDeclr{}:_ ->
               when (declMatches fm dx) $ do
-                dname <- declSpecTypeName declSpecs
+                dname <- declSpecTypeName True declSpecs
                 appendHsc $ "#globalvar " ++ nm ++ " , Ptr " ++ tyParens dname
 
             _ ->
@@ -327,7 +328,7 @@ appendNode fm dx@(CDeclExt (CDecl declSpecs items _)) =
                     appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
                     appendType declSpecs nm
 
-                  dname <- declSpecTypeName declSpecs
+                  dname <- declSpecTypeName True declSpecs
                   unless (null dname || dname == "<" ++ nm ++ ">") $ do
                     when (declMatches fm dx) $
                       appendHsc $ "#synonym_t " ++ nm ++ " , " ++ dname
@@ -339,7 +340,7 @@ appendNode fm dx@(CDeclExt (CDecl declSpecs items _)) =
 
                 _ ->
                   when (declMatches fm dx) $ do
-                    dname <- declSpecTypeName declSpecs
+                    dname <- declSpecTypeName True declSpecs
                     appendHsc $ "#globalvar " ++ nm ++ " , " ++ tyParens dname
   where
     splitDecl declrtr = do      -- in the Maybe Monad
@@ -356,8 +357,8 @@ appendNode fm dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
     for_ ident $ \(Ident nm _ _) ->
       case head ddrs of
         CFunDeclr (Right (decls, _)) _ _ -> do
-          retType <- derDeclrTypeName' True declSpecs (tail ddrs)
-          funType <- applyDeclrs True retType ddrs
+          retType <- derDeclrTypeName' True False declSpecs (tail ddrs)
+          funType <- applyDeclrs True False retType ddrs
           appendHelper $
             "BC_INLINE" ++ show (length decls)
             ++ (if not (null retType) then "" else "VOID")
@@ -375,7 +376,7 @@ appendFunc marker declSpecs (CDeclr ident ddrs _ _ _) = do
   let _:retDeclr:_ = splitWhen isFuncDeclr ddrs
       funcDeclr:_  = dropWhile (not . isFuncDeclr) ddrs
 
-  retType  <- derDeclrTypeName declSpecs retDeclr
+  retType  <- derDeclrTypeName False declSpecs retDeclr
   argTypes <- (++) <$> getArgTypes funcDeclr
                    <*> pure [ "IO " ++ tyParens retType ]
 
@@ -391,7 +392,8 @@ appendFunc marker declSpecs (CDeclr ident ddrs _ _ _) = do
   where
     getArgTypes x = filter (not . null) <$> sequence (getArgTypes' x)
 
-    getArgTypes' (CFunDeclr (Right (decls, _)) _ _) = map cdeclTypeName decls
+    getArgTypes' (CFunDeclr (Right (decls, _)) _ _) =
+        map (cdeclTypeName False) decls
     getArgTypes' _ = []
 
     nameFromIdent (Just (Ident n _ _)) = n
@@ -421,10 +423,11 @@ appendType declSpecs declrName = traverse_ appendType' declSpecs
             let CDecl declSpecs' ((Just y, _, _):_) _ = x
             case y of
               CDeclr _ (CArrDeclr {}:zs) _ _ _ -> do
-                tname <- derDeclrTypeName declSpecs' zs
+                traceM ("zs = " ++ show (fmap (const ()) <$> zs))
+                tname <- derDeclrTypeName True declSpecs' zs
                 appendHsc $ "#array_field " ++ declName ++ " , " ++ tname
               _ -> do
-                tname <- cdeclTypeName x
+                tname <- cdeclTypeName True x
                 appendHsc $ "#field " ++ declName ++ " , " ++ tname
         appendHsc "#stoptype"
 
@@ -459,38 +462,42 @@ cdeclNames (CDecl _ more _) =
           -> nm:nms
         _ ->    nms
 
-cdeclTypeName :: CDeclaration a -> Output String
+cdeclTypeName :: Bool -> CDeclaration a -> Output String
 cdeclTypeName = cdeclTypeName' False
 
-cdeclTypeName' :: Bool -> CDeclaration a -> Output String
-cdeclTypeName' cStyle (CDecl declSpecs more _) =
+cdeclTypeName' :: Bool -> Bool -> CDeclaration a -> Output String
+cdeclTypeName' cStyle isDirect (CDecl declSpecs more _) =
   case more of
-    (Just x, _, _) : _ -> declrTypeName' cStyle declSpecs x
-    _                  -> declSpecTypeName' cStyle declSpecs
+    (Just x, _, _) : _ -> declrTypeName' cStyle isDirect declSpecs x
+    _                  -> declSpecTypeName' cStyle isDirect declSpecs
 
-declSpecTypeName :: [CDeclarationSpecifier a] -> Output String
+declSpecTypeName :: Bool -> [CDeclarationSpecifier a] -> Output String
 declSpecTypeName = declSpecTypeName' False
 
-declSpecTypeName' :: Bool -> [CDeclarationSpecifier a] -> Output String
-declSpecTypeName' cStyle = flip (derDeclrTypeName' cStyle) []
+declSpecTypeName' :: Bool -> Bool -> [CDeclarationSpecifier a] -> Output String
+declSpecTypeName' cStyle isDirect = flip (derDeclrTypeName' cStyle isDirect) []
 
-declrTypeName :: [CDeclarationSpecifier a] -> CDeclarator a -> Output String
+declrTypeName :: Bool -> [CDeclarationSpecifier a] -> CDeclarator a
+              -> Output String
 declrTypeName = declrTypeName' False
 
-declrTypeName' :: Bool -> [CDeclarationSpecifier a] -> CDeclarator a
+declrTypeName' :: Bool -> Bool -> [CDeclarationSpecifier a] -> CDeclarator a
                -> Output String
-declrTypeName' cStyle declSpecs (CDeclr _ ddrs _ _ _) =
-  derDeclrTypeName' cStyle declSpecs ddrs
+declrTypeName' cStyle isDirect declSpecs (CDeclr _ ddrs _ _ _) =
+  derDeclrTypeName' cStyle isDirect declSpecs ddrs
 
-derDeclrTypeName :: [CDeclarationSpecifier a] -> [CDerivedDeclarator a]
+derDeclrTypeName :: Bool -> [CDeclarationSpecifier a] -> [CDerivedDeclarator a]
                  -> Output String
 derDeclrTypeName = derDeclrTypeName' False
 
-derDeclrTypeName' :: Bool -> [CDeclarationSpecifier a] -> [CDerivedDeclarator a]
+derDeclrTypeName' :: Bool
+                  -> Bool
+                  -> [CDeclarationSpecifier a]
+                  -> [CDerivedDeclarator a]
                   -> Output String
-derDeclrTypeName' cStyle declSpecs ddrs = do
+derDeclrTypeName' cStyle isDirect declSpecs ddrs = do
   nm <- fullTypeName' None declSpecs
-  applyDeclrs cStyle nm ddrs
+  applyDeclrs cStyle isDirect nm ddrs
 
   where
     fullTypeName' :: Signedness -> [CDeclarationSpecifier a] -> Output String
@@ -524,13 +531,13 @@ derDeclrTypeName' cStyle declSpecs ddrs = do
 concatM :: (Monad f, Functor f) => [f [a]] -> f [a]
 concatM xs = concat <$> sequence xs
 
-applyDeclrs :: Bool -> String -> [CDerivedDeclarator a] -> Output String
+applyDeclrs :: Bool -> Bool -> String -> [CDerivedDeclarator a] -> Output String
 
-applyDeclrs cStyle baseType (CPtrDeclr {}:f@CFunDeclr {}:ds) = do
-  baseType' <- applyDeclrs cStyle baseType ds
-  applyDeclrs cStyle baseType' [f]
+applyDeclrs cStyle _isDirect baseType (CPtrDeclr {}:f@CFunDeclr {}:ds) = do
+  baseType' <- applyDeclrs cStyle False baseType ds
+  applyDeclrs cStyle False baseType' [f]
 
-applyDeclrs cStyle baseType (CFunDeclr (Right (decls, _)) _ _:_)
+applyDeclrs cStyle isDirect baseType (CFunDeclr (Right (decls, _)) _ _:_)
   | cStyle    = renderList ", " (funTypes decls baseType)
   | otherwise = do
     argTypes <- renderList " -> " (funTypes decls (if null baseType
@@ -539,32 +546,34 @@ applyDeclrs cStyle baseType (CFunDeclr (Right (decls, _)) _ _:_)
     return $ "FunPtr " ++ tyParens argTypes
 
   where renderList str xs = intercalate str <$> filter (not . null) <$> xs
-        funTypes xs bt    = (++) <$> mapM (cdeclTypeName' cStyle) xs
+        funTypes xs bt    = (++) <$> mapM (cdeclTypeName' cStyle isDirect) xs
                                  <*> pure [bt]
 
-applyDeclrs cStyle baseType decl@(CPtrDeclr quals _:[])
-  | cStyle && baseType == "" = applyDeclrs cStyle "void" decl
+applyDeclrs cStyle isDirect baseType decl@(CPtrDeclr quals _:[])
+  | cStyle && baseType == "" = applyDeclrs cStyle isDirect "void" decl
   | cStyle                  = return $ baseType ++ "*"
                                     ++ preQualsToString quals
   | baseType == ""          = return "Ptr ()"
   | baseType == "CChar"     = return "CString"
   | otherwise               = return $ "Ptr " ++ baseType
 
-applyDeclrs cStyle baseType (CPtrDeclr quals _:xs)
-  | cStyle    = concatM [ applyDeclrs cStyle baseType xs
+applyDeclrs cStyle isDirect baseType (CPtrDeclr quals _:xs)
+  | cStyle    = concatM [ applyDeclrs cStyle isDirect baseType xs
                         , pure "*"
                         , pure (preQualsToString quals) ]
   | otherwise = concatM [ pure "Ptr "
-                        , tyParens `fmap` applyDeclrs cStyle baseType xs ]
+                        , tyParens `fmap`
+                              applyDeclrs cStyle isDirect baseType xs ]
 
-applyDeclrs cStyle baseType (CArrDeclr quals _ _:xs)
+applyDeclrs cStyle isDirect baseType (CArrDeclr quals _ _:xs)
   | cStyle    = concatM [ pure (sufQualsToString quals)
-                        , applyDeclrs cStyle baseType xs
+                        , applyDeclrs cStyle isDirect baseType xs
                         , pure "[]" ]
-  | otherwise = concatM [ pure "Ptr "
-                        , tyParens `fmap` applyDeclrs cStyle baseType xs ]
+  | otherwise = concatM [ pure $ if isDirect then "" else "Ptr "
+                        , tyParens `fmap`
+                              applyDeclrs cStyle isDirect baseType xs ]
 
-applyDeclrs _ baseType _ = return baseType
+applyDeclrs _ _ baseType _ = return baseType
 
 preQualsToString :: [CTypeQualifier a] -> String
 preQualsToString = prefixWith ' ' . qualsToStr
