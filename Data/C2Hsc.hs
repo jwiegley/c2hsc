@@ -423,7 +423,6 @@ appendType declSpecs declrName = traverse_ appendType' declSpecs
             let CDecl declSpecs' ((Just y, _, _):_) _ = x
             case y of
               CDeclr _ (CArrDeclr {}:zs) _ _ _ -> do
-                traceM ("zs = " ++ show (fmap (const ()) <$> zs))
                 tname <- derDeclrTypeName True declSpecs' zs
                 appendHsc $ "#array_field " ++ declName ++ " , " ++ tname
               _ -> do
