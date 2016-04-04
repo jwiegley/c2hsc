@@ -37,12 +37,12 @@ import           Text.PrettyPrint as P hiding ((<>))
 import           Text.StringTemplate
 
 --import           Debug.Trace
-
+
 data C2HscOptions = C2HscOptions
     { gcc          :: FilePath
     , cppopts      :: [String]
     , prefix       :: String
-    , filePrefix   :: Maybe String
+    , filePrefix   :: [String]
     , overrides    :: FilePath
     , verbose      :: Bool
     , debug        :: Bool
@@ -51,7 +51,7 @@ data C2HscOptions = C2HscOptions
     deriving (Data, Typeable, Show, Eq)
 
 instance Default C2HscOptions where
-    def = C2HscOptions "/usr/bin/gcc" [] "" Nothing "" True False []
+    def = C2HscOptions "/usr/bin/gcc" [] "" [] "" True False []
 
 ------------------------------ IMPURE FUNCTIONS ------------------------------
 
@@ -96,7 +96,10 @@ parseFile gccPath fileName output omitHeader opts = do
         overrideState <- defineTypeOverrides (overrides opts)
         let pos = initPos fileName
             HscOutput hscs helpercs _ =
-              let fm = maybe (posFile pos ==) isPrefixOf (filePrefix opts)
+              let ps = filePrefix opts
+                  fm = if null ps
+                          then (posFile pos ==)
+                          else \fn -> any (`isPrefixOf` fn) ps
               in execState (overrideState >> parseCFile stream fm pos)
                            newHscState
         writeProducts opts fileName output omitHeader hscs helpercs
@@ -197,7 +200,7 @@ camelCase :: String -> String
 camelCase []       = []
 camelCase ('_':xs) = capitalize xs
 camelCase (x:xs)   = x : camelCase xs
-
+
 ------------------------------- PURE FUNCTIONS -------------------------------
 
 -- Rather than writing to the .hsc and .hsc.helper.c files directly from the
@@ -247,7 +250,7 @@ lookupType :: String -> Output (Maybe Typedef)
 lookupType key = do
   HscOutput _ _ types <- get
   return . join $ M.lookup key types
-
+
 -- Now we are ready to parse the C code from the preprocessed input stream,
 -- located in the given file and starting at the specified position.  The
 -- result of a parse is a list of global declarations, so filter the list down
@@ -270,7 +273,7 @@ declInfo :: CExtDecl -> NodeInfo
 declInfo (CDeclExt (CDecl _ _ info))       = info
 declInfo (CFDefExt (CFunDef _ _ _ _ info)) = info
 declInfo (CAsmExt _ info)                  = info
-
+
 -- These are the top-level printing routines.  We are only interested in
 -- declarations and function defitions (which almost always means inline
 -- functions if the target file is a header file).
@@ -443,7 +446,7 @@ appendType declSpecs declrName = traverse_ appendType' declSpecs
     identName pref ident = case ident of
                         Nothing -> declrName
                         Just (Ident nm _ _) -> pref ++ nm
-
+
 -- The remainder of this file is some hairy code for turning various
 -- constructs into Bindings-DSL type names, such as turning "int ** foo" into
 -- the type name "Ptr (Ptr CInt)".
@@ -597,7 +600,7 @@ qualToStr (CVolatQual _)  = "volatile"
 qualToStr (CRestrQual _)  = "restricted"
 qualToStr (CInlineQual _) = ""
 qualToStr (CAttrQual _)   = error "Unimplemented: attribute qualifiers"
-
+
 -- Simple translation from C types to Foreign.C.Types types.  We represent
 -- Void as the empty string so that returning void becomes IO (), and passing
 -- a void star becomes Ptr ().

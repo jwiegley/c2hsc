@@ -7,7 +7,7 @@ import Data.List as L
 import Prelude hiding (concat, sequence, mapM, mapM_, foldr)
 import System.Console.CmdArgs
 import System.Environment
-
+
 version :: String
 version = "0.7.0"
 
@@ -37,7 +37,7 @@ c2hscOptions = C2HscOptions
     summary c2hscSummary &=
     program "c2hsc" &=
     help "Create an .hsc Bindings-DSL file from a C API header file"
-
+
 ------------------------------ IMPURE FUNCTIONS ------------------------------
 
 -- Parsing of C headers begins with finding gcc so we can run the
