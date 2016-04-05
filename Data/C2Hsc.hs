@@ -599,7 +599,9 @@ qualToStr (CConstQual _)  = "const"
 qualToStr (CVolatQual _)  = "volatile"
 qualToStr (CRestrQual _)  = "restricted"
 qualToStr (CInlineQual _) = ""
-qualToStr (CAttrQual _)   = error "Unimplemented: attribute qualifiers"
+qualToStr (CAttrQual (CAttr (Ident n _ _) _ _)) =
+  if n == "__gnu_inline__" then ""
+                           else error $ "Unimplemented: attribute qualifiers"
 
 -- Simple translation from C types to Foreign.C.Types types.  We represent
 -- Void as the empty string so that returning void becomes IO (), and passing
