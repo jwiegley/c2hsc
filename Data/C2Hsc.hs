@@ -149,8 +149,8 @@ writeProducts opts fileName output omitHeader hscs helpercs = do
               , "#strict_import"
               , ""
               ]
-      pre    = prefix opts
-      vars   = [ ("libName", if null pre then "" else '.':pre)
+      pre    = if  null (prefix opts) then "" else prefix opts ++ "."
+      vars   = [ ("libName", pre)
                , ("cFileName", cap)
                , ("headerFileName", fileName) ]
       cap    = makeModuleName . dropExtension . takeFileName $ fileName
@@ -168,7 +168,7 @@ writeProducts opts fileName output omitHeader hscs helpercs = do
   for_ includes $ \inc -> do
     let incPath      = splitOn "\"" inc !! 1
         incPathParts = map dropTrailingPathSeparator $ splitPath $ dropExtension incPath
-        modName      = intercalate "." $ prefix opts : map makeModuleName incPathParts
+        modName      = pre ++ intercalate "." (map makeModuleName incPathParts)
     hPutStrLn handle $ "import " ++ modName
 
   traverse_ (hPutStrLn handle) hscs
