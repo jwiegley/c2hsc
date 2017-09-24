@@ -18,7 +18,6 @@ import           Data.Maybe
 import           Data.Monoid
 import           Data.Text (pack)
 import           Data.Traversable hiding (mapM, forM)
-import           Debug.Trace
 import           Language.C.Data.Ident
 import           Language.C.Data.InputStream
 import           Language.C.Data.Node

@@ -1,0 +1,11 @@
+resolver: lts-5.18
+
+packages:
+- .
+
+extra-deps:
+- logging-3.0.4
+
+flags: {}
+
+extra-package-dbs: []
