@@ -1,6 +1,6 @@
 Name: c2hsc
 
-Version:  0.7.0
+Version:  0.7.1
 Synopsis: Convert C API header files to .hsc and .hsc.helper.c files
 
 Description: Convert C API header files to .hsc and .hsc.helper.c files
@@ -20,7 +20,7 @@ Library
     default-language:   Haskell2010
     ghc-options: -Wall
     build-depends:
-        base                 >= 3 && < 5
+        base            >= 3 && < 5
       , mtl             >= 2.0
       , containers      >= 0.4
       , transformers    >= 0.2

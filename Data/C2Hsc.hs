@@ -18,7 +18,6 @@ import           Data.Maybe
 import           Data.Monoid
 import           Data.Text (pack)
 import           Data.Traversable hiding (mapM, forM)
-import           Debug.Trace
 import           Language.C.Data.Ident
 import           Language.C.Data.InputStream
 import           Language.C.Data.Node
@@ -35,8 +34,6 @@ import           System.IO
 import           System.IO.Temp
 import           Text.PrettyPrint as P hiding ((<>))
 import           Text.StringTemplate
-
---import           Debug.Trace
 
 data C2HscOptions = C2HscOptions
     { gcc          :: FilePath
@@ -270,9 +267,10 @@ declMatches :: (FilePath -> Bool) -> CExtDecl -> Bool
 declMatches fm = fm . posFile . posOfNode . declInfo
 
 declInfo :: CExtDecl -> NodeInfo
-declInfo (CDeclExt (CDecl _ _ info))       = info
-declInfo (CFDefExt (CFunDef _ _ _ _ info)) = info
-declInfo (CAsmExt _ info)                  = info
+declInfo (CDeclExt (CDecl _ _ info))         = info
+declInfo (CDeclExt (CStaticAssert _ _ info)) = info
+declInfo (CFDefExt (CFunDef _ _ _ _ info))   = info
+declInfo (CAsmExt _ info)                    = info
 
 -- These are the top-level printing routines.  We are only interested in
 -- declarations and function defitions (which almost always means inline
@@ -287,6 +285,8 @@ declInfo (CAsmExt _ info)                  = info
 --   - Inline Functions
 
 appendNode :: (FilePath -> Bool) -> CExtDecl -> Output ()
+
+appendNode _ (CDeclExt (CStaticAssert _ _ _)) = return ()
 
 appendNode fm dx@(CDeclExt (CDecl declSpecs items _)) =
   case items of
@@ -458,11 +458,11 @@ cdeclNames (CDecl _ more _) =
   collect more []
   where
     collect []     nms = reverse nms
-    collect (m:ms) nms = collect ms $
-      case m of
+    collect (m:ms) nms = collect ms $ case m of
         (Just (CDeclr (Just (Ident nm _ _)) _ _ _ _), _, _)
           -> nm:nms
         _ ->    nms
+cdeclNames (CStaticAssert _ _ _) = []
 
 cdeclTypeName :: Bool -> CDeclaration a -> Output String
 cdeclTypeName = cdeclTypeName' False
@@ -472,6 +472,7 @@ cdeclTypeName' cStyle isDirect (CDecl declSpecs more _) =
   case more of
     (Just x, _, _) : _ -> declrTypeName' cStyle isDirect declSpecs x
     _                  -> declSpecTypeName' cStyle isDirect declSpecs
+cdeclTypeName' _ _ (CStaticAssert _ _ _) = error "Unhandled static assertion"
 
 declSpecTypeName :: Bool -> [CDeclarationSpecifier a] -> Output String
 declSpecTypeName = declSpecTypeName' False
@@ -595,13 +596,13 @@ qualsToStr :: [CTypeQualifier a] -> String
 qualsToStr = unwords . map qualToStr
 
 qualToStr :: CTypeQualifier t -> String
-qualToStr (CConstQual _)  = "const"
-qualToStr (CVolatQual _)  = "volatile"
-qualToStr (CRestrQual _)  = "restricted"
-qualToStr (CInlineQual _) = ""
-qualToStr (CAttrQual (CAttr (Ident n _ _) _ _)) =
-  if n == "__gnu_inline__" then ""
-                           else error $ "Unimplemented: attribute qualifiers"
+qualToStr (CConstQual _)    = "const"
+qualToStr (CVolatQual _)    = "volatile"
+qualToStr (CRestrQual _)    = "restricted"
+qualToStr (CAtomicQual _)   = "atomic"
+qualToStr (CAttrQual _)     = ""
+qualToStr (CNullableQual _) = ""
+qualToStr (CNonnullQual _)  = ""
 
 -- Simple translation from C types to Foreign.C.Types types.  We represent
 -- Void as the empty string so that returning void becomes IO (), and passing
