@@ -452,6 +452,7 @@ appendType declSpecs declrName = traverse_ appendType' declSpecs
 -- the type name "Ptr (Ptr CInt)".
 
 data Signedness = None | Signed | Unsigned deriving (Eq, Show, Enum)
+data Lengthiness = Unspecified | Long deriving (Eq, Show, Enum)
 
 cdeclNames :: CDeclaration a -> [String]
 cdeclNames (CDecl _ more _) =
@@ -499,37 +500,53 @@ derDeclrTypeName' :: Bool
                   -> [CDerivedDeclarator a]
                   -> Output String
 derDeclrTypeName' cStyle isDirect declSpecs ddrs = do
-  nm <- fullTypeName' None declSpecs
+  nm <- fullTypeName' (if cStyle then "int" else "") Unspecified None declSpecs
   applyDeclrs cStyle isDirect nm ddrs
 
   where
-    fullTypeName' :: Signedness -> [CDeclarationSpecifier a] -> Output String
-    fullTypeName' _ [] = return ""
+    fullTypeName' :: String -> Lengthiness -> Signedness -> [CDeclarationSpecifier a] -> Output String
+    fullTypeName' "" _ None []
+        | cStyle    = return "void"
+        | otherwise = return ""
+    fullTypeName' "" _ Unsigned []
+        | cStyle    = return "int"
+        | otherwise = return "CUInt"
+    fullTypeName' "" _ Signed []
+        | cStyle    = return "int"
+        | otherwise = return "CInt"
 
-    fullTypeName' s (CTypeQual qual:xs) =
-      if cStyle
-      then do
-        baseType <- fullTypeName' s xs
-        return $ let q = qualToStr qual
-                 in if null q
-                    then baseType
-                    else q ++ " " ++ baseType
-      else
-        fullTypeName' s xs
+    fullTypeName' ty _ _ [] = return ty
 
-    fullTypeName' _ (CTypeSpec (CSignedType _):[]) =
-      return $ if cStyle then "signed" else "CInt"
-    fullTypeName' _ (CTypeSpec (CUnsigType _):[]) =
-      return $ if cStyle then "unsigned" else "CUInt"
+    fullTypeName' ty l s (x:xs) = case x of
+      CTypeSpec (CSignedType _)
+          | cStyle    -> ("signed " ++) <$> fullTypeName' ty l Signed xs
+          | otherwise -> fullTypeName' ty l Signed xs
 
-    fullTypeName' s (x:xs) =
-      case x of
-        CTypeSpec (CSignedType _) -> fullTypeName' Signed xs
-        CTypeSpec (CUnsigType _)  -> fullTypeName' Unsigned xs
-        CTypeSpec tspec           -> if cStyle
-                                     then cTypeName tspec s
-                                     else typeName tspec s
-        _ -> fullTypeName' s xs
+      CTypeSpec (CUnsigType _)
+          | cStyle    -> ("unsigned " ++) <$> fullTypeName' ty l Unsigned xs
+          | otherwise -> fullTypeName' ty l Unsigned xs
+
+      CTypeSpec tspec@(CLongType _)
+        | cStyle    -> fullTypeName' ((case l of
+                                          Long -> "long "
+                                          Unspecified -> "") ++ cTypeName tspec) Long s xs
+        | otherwise -> typeName tspec l s >>= \ty' -> fullTypeName' ty' Long s xs
+
+      CTypeSpec tspec
+        | cStyle    -> fullTypeName' ((case l of
+                                          Long -> "long "
+                                          Unspecified -> "") ++ cTypeName tspec) Unspecified s xs
+        | otherwise -> typeName tspec l s >>= \ty' -> fullTypeName' ty' Unspecified s xs
+
+      CTypeQual qual
+        | cStyle -> do
+          baseType <- fullTypeName' ty l s xs
+          return $ let q = qualToStr qual
+                   in if null q
+                      then baseType
+                      else q ++ " " ++ baseType
+
+      _ -> fullTypeName' ty l s xs
 
 concatM :: (Monad f, Functor f) => [f [a]] -> f [a]
 concatM xs = concat <$> sequence xs
@@ -608,85 +625,72 @@ qualToStr (CNonnullQual _)  = ""
 -- Void as the empty string so that returning void becomes IO (), and passing
 -- a void star becomes Ptr ().
 
-typeName :: CTypeSpecifier a -> Signedness -> Output String
+typeName :: CTypeSpecifier a -> Lengthiness -> Signedness -> Output String
 
-typeName (CVoidType _) _   = return ""
-typeName (CFloatType _) _  = return "CFloat"
-typeName (CDoubleType _) _ = return "CDouble"
-typeName (CBoolType _) _   = return "CInt"
+typeName (CVoidType _) _ _   = return ""
+typeName (CFloatType _) _ _  = return "CFloat"
+typeName (CDoubleType _) _ _ = return "CDouble"
+typeName (CBoolType _) _ _   = return "CInt"
 
-typeName (CCharType _) s   = case s of
-                               Signed   -> return "CSChar"
-                               Unsigned -> return "CUChar"
-                               _        -> return "CChar"
-typeName (CShortType _) s  = case s of
-                               Signed   -> return "CShort"
-                               Unsigned -> return "CUShort"
-                               _        -> return "CShort"
-typeName (CIntType _) s    = case s of
-                               Signed   -> return "CInt"
-                               Unsigned -> return "CUInt"
-                               _        -> return "CInt"
-typeName (CLongType _) s   = case s of
-                               Signed   -> return "CLong"
-                               Unsigned -> return "CULong"
-                               _        -> return "CLong"
+typeName (CCharType _) _ Signed   = return "CSChar"
+typeName (CCharType _) _ Unsigned = return "CUChar"
+typeName (CCharType _) _ _        = return "CChar"
 
-typeName (CTypeDef (Ident nm _ _) _) _ = do
+typeName (CShortType _) _ Signed   = return "CShort"
+typeName (CShortType _) _ Unsigned = return "CUShort"
+typeName (CShortType _) _ _        = return "CShort"
+
+typeName (CIntType _) Long Signed   = return "CLong"
+typeName (CIntType _) Long Unsigned = return "CULong"
+typeName (CIntType _) Long _        = return "CLong"
+
+typeName (CIntType _) _ Signed   = return "CInt"
+typeName (CIntType _) _ Unsigned = return "CUInt"
+typeName (CIntType _) _ _        = return "CInt"
+
+typeName (CLongType _) Long Signed   = return "CLLong"
+typeName (CLongType _) Long Unsigned = return "CULLong"
+typeName (CLongType _) Long _        = return "CLLong"
+
+typeName (CLongType _) _ Signed   = return "CLong"
+typeName (CLongType _) _ Unsigned = return "CULong"
+typeName (CLongType _) _ _        = return "CLong"
+
+typeName (CTypeDef (Ident nm _ _) _) _ _ = do
   definition <- lookupType nm
   case definition of
     Nothing -> return $ "<" ++ nm ++ ">"
     Just (Typedef { typedefName = defNm }) ->
       return defNm
 
-typeName (CSUType (CStruct tag (Just (Ident nm _ _)) _ _ _) _) _ =
+typeName (CSUType (CStruct tag (Just (Ident nm _ _)) _ _ _) _) _ _ =
   return $ "<" ++ structTagPrefix tag ++ nm ++ ">"
-typeName (CEnumType (CEnum (Just (Ident nm _ _)) _ _ _) _) _ =
+typeName (CEnumType (CEnum (Just (Ident nm _ _)) _ _ _) _) _ _ =
   return $ "<enum " ++ nm ++ ">"
 
-typeName (CComplexType _) _  = return ""
-typeName (CTypeOfExpr _ _) _ = return ""
-typeName (CTypeOfType _ _) _ = return ""
+typeName (CComplexType _) _ _  = return ""
+typeName (CTypeOfExpr _ _) _ _ = return ""
+typeName (CTypeOfType _ _) _ _ = return ""
 
-typeName _ _ = return ""
+typeName _ _ _ = return ""
 
--- Translation from C back to C.  Needed because there's no good way to pretty
--- print a function's return type (including pointers on the declarator) in
--- language-c.
+cTypeName :: CTypeSpecifier a -> String
+cTypeName (CVoidType _)               = ""
+cTypeName (CFloatType _)              = "float"
+cTypeName (CDoubleType _)             = "double"
+cTypeName (CBoolType _)               = "int"
+cTypeName (CCharType _)               = "char"
+cTypeName (CShortType _)              = "short"
+cTypeName (CIntType _)                = "int"
+cTypeName (CLongType _)               = "long"
+cTypeName (CTypeDef (Ident nm _ _) _) = nm
+cTypeName (CComplexType _)            = ""
+cTypeName (CSUType _ _)               = ""
+cTypeName (CEnumType _ _)             = ""
+cTypeName (CTypeOfExpr _ _)           = ""
+cTypeName (CTypeOfType _ _)           = ""
 
-cTypeName :: CTypeSpecifier a -> Signedness -> Output String
-
-cTypeName (CVoidType _) _   = return ""
-cTypeName (CFloatType _) _  = return "float"
-cTypeName (CDoubleType _) _ = return "double"
-cTypeName (CBoolType _) _   = return "int"
-
-cTypeName (CCharType _) s   = case s of
-                               Signed   -> return "signed char"
-                               Unsigned -> return "unsigned char"
-                               _        -> return "char"
-cTypeName (CShortType _) s  = case s of
-                               Signed   -> return "signed short"
-                               Unsigned -> return "unsigned short"
-                               _        -> return "hort"
-cTypeName (CIntType _) s    = case s of
-                               Signed   -> return "signed int"
-                               Unsigned -> return "unsigned int"
-                               _        -> return "int"
-cTypeName (CLongType _) s   = case s of
-                               Signed   -> return "signed long"
-                               Unsigned -> return "unsigned long"
-                               _        -> return "long"
-
-cTypeName (CTypeDef (Ident nm _ _) _) _ = return nm
-
-cTypeName (CComplexType _) _  = return ""
-cTypeName (CSUType _ _) _     = return ""
-cTypeName (CEnumType _ _) _   = return ""
-cTypeName (CTypeOfExpr _ _) _ = return ""
-cTypeName (CTypeOfType _ _) _ = return ""
-
-cTypeName _ _ = return ""
+cTypeName _ = ""
 
 tyParens :: String -> String
 tyParens ty =
