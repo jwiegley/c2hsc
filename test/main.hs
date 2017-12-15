@@ -149,6 +149,13 @@ union u {
 -- #synonym_t MyStructEmptyType , <struct MyStructEmpty>
 -- |]
 
+        it "#33" $
+            matches [here|
+unsigned foo(unsigned);
+|] [here|
+#ccall foo , CUInt -> IO CUInt
+|]
+
     describe "primitive types" $ do
         it "float" $
             matches [here|
