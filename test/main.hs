@@ -155,13 +155,16 @@ unsigned foo(unsigned);
 |] [here|
 #ccall foo , CUInt -> IO CUInt
 |]
-
             matches [here|
 unsigned __attribute__ ((visibility ("default"))) foo(unsigned);
 |] [here|
 #ccall foo , CUInt -> IO CUInt
 |]
-
+            matches [here|
+long long __attribute__ ((visibility ("default"))) foo(long long);
+|] [here|
+#ccall foo , CLLong -> IO CLLong
+|]
 
     describe "primitive types" $ do
         it "float" $
