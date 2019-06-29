@@ -6,6 +6,7 @@ module Data.C2Hsc where
 import           Control.Applicative
 import           Control.Logging
 import           Control.Monad hiding (sequence)
+import           Control.Monad.Trans.Maybe
 import           Control.Monad.Trans.State
 import           Data.Char
 import           Data.Data
@@ -48,7 +49,7 @@ data C2HscOptions = C2HscOptions
     deriving (Data, Typeable, Show, Eq)
 
 instance Default C2HscOptions where
-    def = C2HscOptions "/usr/bin/gcc" [] "" [] "" True False []
+    def = C2HscOptions "" [] "" [] "" True False []
 
 ------------------------------ IMPURE FUNCTIONS ------------------------------
 
@@ -71,9 +72,14 @@ processString str = do
 
 runArgs :: C2HscOptions -> Maybe Handle -> Bool -> IO ()
 runArgs opts output omitHeader = do
-  gccExe <- findExecutable $ case gcc opts of "" -> "gcc"; x -> x
+  let gccArg = not . null $ gcc opts
+  gccExe <- runMaybeT . asum . map (MaybeT . findExecutable) $
+    if gccArg
+    then [gcc opts]
+    else ["gcc", "/usr/bin/gcc"]
   case gccExe of
-    Nothing      -> error $ "Cannot find executable '" ++ gcc opts ++ "'"
+    Nothing      -> error $ "Cannot find gcc executable"
+      ++ if gccArg then " '" ++ gcc opts ++ "'" else ""
     Just gccPath -> for_ (files opts) $ \fileName ->
         parseFile gccPath fileName output omitHeader opts
 
