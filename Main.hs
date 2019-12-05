@@ -4,6 +4,8 @@ import Control.Logging hiding (debug)
 import Control.Monad hiding (sequence)
 import Data.C2Hsc (C2HscOptions(..), runArgs)
 import Data.List as L
+import Data.Time.Clock
+import Data.Time.Calendar
 import Prelude hiding (concat, sequence, mapM, mapM_, foldr)
 import System.Console.CmdArgs
 import System.Environment
@@ -11,14 +13,14 @@ import System.Environment
 version :: String
 version = "0.7.0"
 
-copyright :: String
-copyright = "2012-2014"
+copyright :: Integer -> String
+copyright year = "2012-" ++ (show year)
 
-c2hscSummary :: String
-c2hscSummary = "c2hsc v" ++ version ++ ", (C) John Wiegley " ++ copyright
+c2hscSummary :: Integer -> String
+c2hscSummary year = "c2hsc v" ++ version ++ ", (C) John Wiegley " ++ (copyright year)
 
-c2hscOptions :: C2HscOptions
-c2hscOptions = C2HscOptions
+c2hscOptions :: Integer -> C2HscOptions
+c2hscOptions year = C2HscOptions
     { gcc       = def &= typFile
                   &= help "Specify explicit path to gcc or cpp"
     , cppopts   = def &= typ "OPTS"
@@ -34,7 +36,7 @@ c2hscOptions = C2HscOptions
     , debug     = def &= name "D"
                   &= help "Report debug information"
     , files     = def &= args &= typFile } &=
-    summary c2hscSummary &=
+    summary (c2hscSummary year) &=
     program "c2hsc" &=
     help "Create an .hsc Bindings-DSL file from a C API header file"
 
@@ -45,6 +47,7 @@ c2hscOptions = C2HscOptions
 
 main :: IO ()
 main = getArgs >>= \mainArgs -> do
+  (year, _, _) <- getCurrentTime >>= return . toGregorian . utctDay
   opts <- withArgs (if null mainArgs then ["--help"] else mainArgs)
-          (cmdArgs c2hscOptions)
+          (cmdArgs $ c2hscOptions year)
   withStderrLogging $ runArgs opts Nothing False

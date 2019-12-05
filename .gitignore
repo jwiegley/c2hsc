@@ -1,2 +1,4 @@
 /dist/
 /shell.nix
+.stack-work/
+stack.yaml.lock
