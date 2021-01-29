@@ -18,6 +18,14 @@ tryAny = try
 main :: IO ()
 main = withStdoutLogging $ hspec $ do
     describe "issues" $ do
+        it "#38" $ do
+            matches [here|
+typedef const char* an_pchar;
+|] [here|
+{- typedef const char * an_pchar; -}
+#synonym_t an_pchar , Ptr CChar
+|]
+
         it "#25" $ do
             matches [here|
 typedef struct {
