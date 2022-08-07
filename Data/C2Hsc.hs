@@ -112,7 +112,7 @@ defineTypeOverrides [] = return (void defaultOverrides)
 defineTypeOverrides overridesFile = do
   contents <- readFile overridesFile
   return $ mapM_ (\line ->
-                   let (cName:ffiName:[]) = splitOn " -> " line
+                   let [cName, ffiName] = splitOn " -> " line
                    in overrideType cName ffiName)
                  (lines contents)
 
@@ -324,9 +324,27 @@ appendNode fm dx@(CDeclExt (CDecl declSpecs items _)) =
                 appendHsc $ "#globalarray " ++ nm ++ " , " ++ tyParens dname
 
             CPtrDeclr{}:_ ->
-              when (declMatches fm dx) $ do
-                dname <- declSpecTypeName True declSpecs
-                appendHsc $ "#globalvar " ++ nm ++ " , Ptr " ++ tyParens dname
+              case declSpecs of
+                CStorageSpec (CTypedef _):_ -> do
+                  when (declMatches fm dx) $ do
+                    appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
+                    appendType declSpecs nm
+
+                  org_dname <- declSpecTypeName True declSpecs
+                  unless (null org_dname || org_dname == "<" ++ nm ++ ">") $ do
+                    let dname = "Ptr " ++ org_dname
+                    when (declMatches fm dx) $
+                      appendHsc $ "#synonym_t " ++ nm ++ " , " ++ dname
+                    -- We saw the synonym, override the defineType just above
+                    defineType nm $ Just Typedef
+                        { typedefName     = dname
+                        , typedefOverride = False
+                        }
+
+                _ ->
+                  when (declMatches fm dx) $ do
+                    dname <- declSpecTypeName True declSpecs
+                    appendHsc $ "#globalvar " ++ nm ++ " , Ptr " ++ tyParens dname
 
             _ ->
               -- If the type is a typedef, record the equivalence so we can
@@ -626,6 +644,8 @@ qualToStr (CAtomicQual _)   = "atomic"
 qualToStr (CAttrQual _)     = ""
 qualToStr (CNullableQual _) = ""
 qualToStr (CNonnullQual _)  = ""
+qualToStr (CClRdOnlyQual _) = "__read_only"
+qualToStr (CClWrOnlyQual _) = "__write_only"
 
 -- Simple translation from C types to Foreign.C.Types types.  We represent
 -- Void as the empty string so that returning void becomes IO (), and passing
@@ -666,7 +686,7 @@ typeName (CTypeDef (Ident nm _ _) _) _ _ = do
   definition <- lookupType nm
   case definition of
     Nothing -> return $ "<" ++ nm ++ ">"
-    Just (Typedef { typedefName = defNm }) ->
+    Just Typedef { typedefName = defNm } ->
       return defNm
 
 typeName (CSUType (CStruct tag (Just (Ident nm _ _)) _ _ _) _) _ _ =
