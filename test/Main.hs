@@ -5,15 +5,40 @@ module Main where
 
 import Control.Exception
 import Control.Logging
+import Control.Monad hiding (sequence)
 import Data.C2Hsc
 import Data.Char
+import Data.Default
 import Data.String.Here
 import Data.Text (Text, pack)
-import Prelude hiding (log)
+import Prelude
+import System.Directory
+import System.IO
+import System.IO.Temp
 import Test.Hspec
+
 
 tryAny :: IO a -> IO (Either SomeException a)
 tryAny = try
+
+processString :: String -> IO String
+processString str = do
+    tmpDir <- getTemporaryDirectory
+    -- Has to have .c extension (or we can explicitly pass '-x c' to gcc), otherwise this warning messes up the test suite output:
+    -- gcc: warning: /tmp/c2hsc499725-608.src: linker input file unused because linking not done
+    -- https://gcc.gnu.org/onlinedocs/gcc/Overall-Options.html
+    -- For any given input file, the file name suffix determines what kind of compilation is done
+    -- An object file to be fed straight into linking. Any file name with no recognized suffix is treated this way.
+    -- So for a file where it doesn't recognize the extension, it'll expect it to be an object file for the linker.
+    withTempFile tmpDir "c2hsc.c" $ \path h -> do
+        hPutStr h str
+        hClose h
+        withTempFile tmpDir "c2hsc.out" $ \outPath outH -> do
+            runArgs def { files  = [path]
+                        , prefix = "Spec"
+                        } (Just outH) True
+            hClose outH
+            readFile outPath
 
 main :: IO ()
 main = withStdoutLogging $ hspec $ do
@@ -1687,8 +1712,8 @@ BC_INLINE7(inline_foo, int, int*, const int, const int*, const int**, const int*
 
 matches :: String -> String -> IO ()
 matches input output = do
-    res <- processString input
-    trim res `shouldBe` output
+  res <- processString input
+  trim res `shouldBe` output
 
 tshow :: String -> Text
 tshow = pack . show
