@@ -3,38 +3,39 @@
 
 module Data.C2Hsc where
 
-import           Control.Applicative
-import           Control.Logging
-import           Control.Monad hiding (sequence)
-import           Control.Monad.Trans.Maybe
-import           Control.Monad.Trans.State
-import           Data.Char
-import           Data.Data
-import           Data.Default
-import           Data.Foldable hiding (concat, elem, mapM_)
-import           Data.List as L
-import           Data.List.Split
+import Control.Applicative
+import Control.Logging
+import Control.Monad
+import Control.Monad.Trans.Maybe
+import Control.Monad.Trans.State
+import Data.Char
+import Data.Data
+import Data.Default
+import Data.Foldable
+import Data.List (filter, map,elem, concat, intercalate, isPrefixOf, lines, unlines, unwords, (!!), dropWhile, head, reverse, tail)
+import Data.List.Split
+import Data.Maybe
+import Data.Monoid
+import Data.Text (pack)
+import Data.Traversable
+import Language.C.Data.Ident
+import Language.C.Data.InputStream
+import Language.C.Data.Node
+import Language.C.Data.Position
+import Language.C.Parser
+import Language.C.Pretty
+import Language.C.Syntax.AST
+import Language.C.System.GCC
+import Language.C.System.Preprocess
+import Prelude hiding (concat, sequence, mapM, mapM_, foldr)
+import System.Directory
+import System.FilePath.Posix
+import System.IO
+import System.IO.Temp ()
+import Text.StringTemplate
+import Text.PrettyPrint as P hiding ((<>))
 import qualified Data.Map as M
-import           Data.Maybe
-import           Data.Monoid
-import           Data.Text (pack)
-import           Data.Traversable hiding (mapM, forM)
-import           Language.C.Data.Ident
-import           Language.C.Data.InputStream
-import           Language.C.Data.Node
-import           Language.C.Data.Position
-import           Language.C.Parser
-import           Language.C.Pretty
-import           Language.C.Syntax.AST
-import           Language.C.System.GCC
-import           Language.C.System.Preprocess
-import           Prelude hiding (concat, sequence, mapM, mapM_, foldr)
-import           System.Directory
-import           System.FilePath.Posix
-import           System.IO
-import           System.IO.Temp
-import           Text.PrettyPrint as P hiding ((<>))
-import           Text.StringTemplate
+
 
 data C2HscOptions = C2HscOptions
     { gcc          :: FilePath
@@ -46,26 +47,12 @@ data C2HscOptions = C2HscOptions
     , debug        :: Bool
     , files        :: [FilePath]
     }
-    deriving (Data, Typeable, Show, Eq)
+    deriving (Data, Show, Eq)
 
 instance Default C2HscOptions where
     def = C2HscOptions "" [] "" [] "" True False []
 
 ------------------------------ IMPURE FUNCTIONS ------------------------------
-
--- This function is used for debugging
-processString :: String -> IO String
-processString str = do
-    tmpDir <- getTemporaryDirectory
-    withTempFile tmpDir "c2hsc.src" $ \path h -> do
-        hPutStr h str
-        hClose h
-        withTempFile tmpDir "c2hsc.out" $ \outPath outH -> do
-            runArgs def { files  = [path]
-                        , prefix = "Spec"
-                        } (Just outH) True
-            hClose outH
-            readFile outPath
 
 -- Parsing of C headers begins with finding gcc so we can run the
 -- preprocessor.
@@ -79,7 +66,7 @@ runArgs opts output omitHeader = do
     else ["gcc", "/usr/bin/gcc"]
   case gccExe of
     Nothing      -> error $ "Cannot find gcc executable"
-      ++ if gccArg then " '" ++ gcc opts ++ "'" else ""
+      <> if gccArg then " '" <> gcc opts <> "'" else ""
     Just gccPath -> for_ (files opts) $ \fileName ->
         parseFile gccPath fileName output omitHeader opts
 
@@ -89,29 +76,26 @@ runArgs opts output omitHeader = do
 
 parseFile :: FilePath -> FilePath -> Maybe Handle -> Bool -> C2HscOptions -> IO ()
 parseFile gccPath fileName output omitHeader opts = do
-    result <- runPreprocessor (newGCC gccPath)
-                              (rawCppArgs
-                                (cppopts opts)
-                                fileName)
-    case result of
-      Left err     -> error $ "Failed to run cpp: " ++ show err
-      Right stream -> do
-        overrideState <- defineTypeOverrides (overrides opts)
-        let pos = initPos fileName
-            HscOutput hscs helpercs _ =
-              let ps = filePrefix opts
-                  fm = if null ps
-                          then (posFile pos ==)
-                          else \fn -> any (`isPrefixOf` fn) ps
-              in execState (overrideState >> parseCFile stream fm pos)
-                           newHscState
-        writeProducts opts fileName output omitHeader hscs helpercs
+  result <- runPreprocessor (newGCC gccPath) (rawCppArgs (cppopts opts) fileName)
+  case result of
+    Left err     -> error $ "Failed to run cpp: " <> show err
+    Right stream -> do
+      overrideState <- defineTypeOverrides (overrides opts)
+      let pos = initPos fileName
+          HscOutput hscs helpercs _ =
+            let ps = filePrefix opts
+                fm = if null ps
+                        then (posFile pos ==)
+                        else \fn -> any (`isPrefixOf` fn) ps
+            in execState (overrideState >> parseCFile stream fm pos)
+                          newHscState
+      writeProducts opts fileName output omitHeader hscs helpercs
 
 defineTypeOverrides :: FilePath -> IO (Output ())
-defineTypeOverrides [] = return (void defaultOverrides)
+defineTypeOverrides [] = pure (void defaultOverrides)
 defineTypeOverrides overridesFile = do
   contents <- readFile overridesFile
-  return $ mapM_ (\line ->
+  pure $ mapM_ (\line ->
                    let [cName, ffiName] = splitOn " -> " line
                    in overrideType cName ffiName)
                  (lines contents)
@@ -152,15 +136,15 @@ writeProducts opts fileName output omitHeader hscs helpercs = do
               , "#strict_import"
               , ""
               ]
-      pre    = if  null (prefix opts) then "" else prefix opts ++ "."
+      pre    = if  null (prefix opts) then "" else prefix opts <> "."
       vars   = [ ("libName", pre)
                , ("cFileName", cap)
                , ("headerFileName", fileName) ]
       cap    = makeModuleName . dropExtension . takeFileName $ fileName
-      target = cap ++ ".hsc"
+      target = cap <> ".hsc"
 
   handle <- case output of
-      Just h -> return h
+      Just h -> pure h
       Nothing -> openFile target WriteMode
 
   hPutStrLn handle $ toString $ setManyAttrib vars code
@@ -171,8 +155,8 @@ writeProducts opts fileName output omitHeader hscs helpercs = do
   for_ includes $ \inc -> do
     let incPath      = splitOn "\"" inc !! 1
         incPathParts = map dropTrailingPathSeparator $ splitPath $ dropExtension incPath
-        modName      = pre ++ intercalate "." (map makeModuleName incPathParts)
-    hPutStrLn handle $ "import " ++ modName
+        modName      = pre <> intercalate "." (map makeModuleName incPathParts)
+    hPutStrLn handle $ "import " <> modName
 
   traverse_ (hPutStrLn handle) hscs
 
@@ -181,9 +165,9 @@ writeProducts opts fileName output omitHeader hscs helpercs = do
     log' $ "Wrote " <> pack target
 
   unless (null helpercs) $ do
-    let targetc = cap ++ ".hsc.helper.c"
+    let targetc = cap <> ".hsc.helper.c"
     handlec <- case output of
-        Just h -> return h
+        Just h -> pure h
         Nothing -> openFile targetc WriteMode
 
     hPutStrLn handlec "#include <bindings.cmacros.h>"
@@ -234,25 +218,25 @@ newHscState = HscOutput [] [] M.empty
 appendHsc :: String -> Output ()
 appendHsc hsc = do
   HscOutput hscs xs types <- get
-  put $ HscOutput (hscs ++ [hsc]) xs types
+  put $ HscOutput (hscs <> [hsc]) xs types
 
 appendHelper :: String -> Output ()
 appendHelper helperc = do
   HscOutput xs helpercs types <- get
-  put $ HscOutput xs (helpercs ++ [helperc]) types
+  put $ HscOutput xs (helpercs <> [helperc]) types
 
 defineType :: String -> Maybe Typedef -> Output ()
 defineType key value = do
   HscOutput xs ys types <- get
   hasOverride <- fmap typedefOverride <$> lookupType key
   case hasOverride of
-    Just True -> return ()
+    Just True -> pure ()
     _         -> put $ HscOutput xs ys (M.insert key value types)
 
 lookupType :: String -> Output (Maybe Typedef)
 lookupType key = do
   HscOutput _ _ types <- get
-  return . join $ M.lookup key types
+  pure . join $ M.lookup key types
 
 -- Now we are ready to parse the C code from the preprocessed input stream,
 -- located in the given file and starting at the specified position.  The
@@ -263,7 +247,7 @@ lookupType key = do
 parseCFile :: InputStream -> (FilePath -> Bool) -> Position -> Output ()
 parseCFile stream fm pos =
   case parseC stream pos of
-    Left err -> error $ "Failed to compile: " ++ show err
+    Left err -> error $ "Failed to compile: " <> show err
     Right (CTranslUnit decls _) -> generateHsc decls
   where
     generateHsc :: [CExtDecl] -> Output ()
@@ -292,13 +276,13 @@ declInfo (CAsmExt _ info)                    = info
 
 appendNode :: (FilePath -> Bool) -> CExtDecl -> Output ()
 
-appendNode _ (CDeclExt (CStaticAssert _ _ _)) = return ()
+appendNode _ (CDeclExt (CStaticAssert _ _ _)) = pure ()
 
 appendNode fm dx@(CDeclExt (CDecl declSpecs items _)) =
   case items of
     [] ->
       when (declMatches fm dx) $ do
-        appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
+        appendHsc $ "{- " <> P.render (pretty dx) <> " -}"
         appendType declSpecs ""
 
     xs ->
@@ -316,25 +300,25 @@ appendNode fm dx@(CDeclExt (CDecl declSpecs items _)) =
             CArrDeclr{}:CPtrDeclr{}:_ ->
               when (declMatches fm dx) $ do
                 dname <- declSpecTypeName True declSpecs
-                appendHsc $ "#globalarray " ++ nm ++ " , Ptr " ++ tyParens dname
+                appendHsc $ "#globalarray " <> nm <> " , Ptr " <> tyParens dname
 
             CArrDeclr{}:_ ->
               when (declMatches fm dx) $ do
                 dname <- declSpecTypeName True declSpecs
-                appendHsc $ "#globalarray " ++ nm ++ " , " ++ tyParens dname
+                appendHsc $ "#globalarray " <> nm <> " , " <> tyParens dname
 
             CPtrDeclr{}:_ ->
               case declSpecs of
                 CStorageSpec (CTypedef _):_ -> do
                   when (declMatches fm dx) $ do
-                    appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
+                    appendHsc $ "{- " <> P.render (pretty dx) <> " -}"
                     appendType declSpecs nm
 
                   org_dname <- declSpecTypeName True declSpecs
-                  unless (null org_dname || org_dname == "<" ++ nm ++ ">") $ do
-                    let dname = "Ptr " ++ org_dname
+                  unless (null org_dname || org_dname == "<" <> nm <> ">") $ do
+                    let dname = "Ptr " <> org_dname
                     when (declMatches fm dx) $
-                      appendHsc $ "#synonym_t " ++ nm ++ " , " ++ dname
+                      appendHsc $ "#synonym_t " <> nm <> " , " <> dname
                     -- We saw the synonym, override the defineType just above
                     defineType nm $ Just Typedef
                         { typedefName     = dname
@@ -344,7 +328,7 @@ appendNode fm dx@(CDeclExt (CDecl declSpecs items _)) =
                 _ ->
                   when (declMatches fm dx) $ do
                     dname <- declSpecTypeName True declSpecs
-                    appendHsc $ "#globalvar " ++ nm ++ " , Ptr " ++ tyParens dname
+                    appendHsc $ "#globalvar " <> nm <> " , Ptr " <> tyParens dname
 
             _ ->
               -- If the type is a typedef, record the equivalence so we can
@@ -352,13 +336,13 @@ appendNode fm dx@(CDeclExt (CDecl declSpecs items _)) =
               case declSpecs of
                 CStorageSpec (CTypedef _):_ -> do
                   when (declMatches fm dx) $ do
-                    appendHsc $ "{- " ++ P.render (pretty dx) ++ " -}"
+                    appendHsc $ "{- " <> P.render (pretty dx) <> " -}"
                     appendType declSpecs nm
 
                   dname <- declSpecTypeName True declSpecs
-                  unless (null dname || dname == "<" ++ nm ++ ">") $ do
+                  unless (null dname || dname == "<" <> nm <> ">") $ do
                     when (declMatches fm dx) $
-                      appendHsc $ "#synonym_t " ++ nm ++ " , " ++ dname
+                      appendHsc $ "#synonym_t " <> nm <> " , " <> dname
                     -- We saw the synonym, override the defineType just above
                     defineType nm $ Just Typedef
                         { typedefName     = dname
@@ -368,11 +352,11 @@ appendNode fm dx@(CDeclExt (CDecl declSpecs items _)) =
                 _ ->
                   when (declMatches fm dx) $ do
                     dname <- declSpecTypeName True declSpecs
-                    appendHsc $ "#globalvar " ++ nm ++ " , " ++ tyParens dname
+                    appendHsc $ "#globalvar " <> nm <> " , " <> tyParens dname
   where
     splitDecl declrtr = do      -- in the Maybe Monad
       d@(CDeclr ident ddrs _ _ _) <- declrtr
-      return (d, ddrs, case ident of Just (Ident nm _ _) -> nm; _ -> "")
+      pure (d, ddrs, case ident of Just (Ident nm _ _) -> nm; _ -> "")
 
 appendNode fm dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
   -- Assume functions defined in headers are inline functions
@@ -387,12 +371,12 @@ appendNode fm dx@(CFDefExt (CFunDef declSpecs declrtr _ _ _)) =
           retType <- derDeclrTypeName' True False declSpecs (tail ddrs)
           funType <- applyDeclrs True False retType ddrs
           appendHelper $
-            "BC_INLINE" ++ show (length decls)
-            ++ (if not (null retType) then "" else "VOID")
-            ++ "(" ++ nm ++ ", " ++ funType ++ ")"
-        _ -> return ()
+            "BC_INLINE" <> show (length decls)
+            <> (if not (null retType) then "" else "VOID")
+            <> "(" <> nm <> ", " <> funType <> ")"
+        _ -> pure ()
 
-appendNode _ (CAsmExt _ _) = return ()
+appendNode _ (CAsmExt _ _) = pure ()
 
 -- Print out a function as #ccall or #cinline.  The syntax is the same for
 -- both externs and inlines, except that we want to do extra work for inline
@@ -404,8 +388,8 @@ appendFunc marker declSpecs (CDeclr ident ddrs _ _ _) = do
       funcDeclr:_  = dropWhile (not . isFuncDeclr) ddrs
 
   retType  <- derDeclrTypeName False declSpecs retDeclr
-  argTypes <- (++) <$> getArgTypes funcDeclr
-                   <*> pure [ "IO " ++ tyParens retType ]
+  argTypes <- (<>) <$> getArgTypes funcDeclr
+                   <*> pure [ "IO " <> tyParens retType ]
 
   let name' = nameFromIdent ident
       code  = newSTMP "$marker$ $name$ , $argTypes;separator=' -> '$"
@@ -440,36 +424,36 @@ appendType declSpecs declrName = traverse_ appendType' declSpecs
       let name' = identName (structTagPrefix tag) ident
       seen <- M.member name' . hoTypes <$> get
       when (isNothing decls && not seen) $ do
-        appendHsc $ "#opaque_t " ++ name'
+        appendHsc $ "#opaque_t " <> name'
         defineType name' Nothing
 
       for_ decls $ \xs -> do
-        appendHsc $ "#starttype " ++ name'
+        appendHsc $ "#starttype " <> name'
         for_ xs $ \x ->
           for_ (cdeclNames x) $ \declName -> do
             let CDecl declSpecs' ((Just y, _, _):_) _ = x
             case y of
               CDeclr _ (CArrDeclr {}:zs) _ _ _ -> do
                 tname <- derDeclrTypeName True declSpecs' zs
-                appendHsc $ "#array_field " ++ declName ++ " , " ++ tname
+                appendHsc $ "#array_field " <> declName <> " , " <> tname
               _ -> do
                 tname <- cdeclTypeName True x
-                appendHsc $ "#field " ++ declName ++ " , " ++ tname
+                appendHsc $ "#field " <> declName <> " , " <> tname
         appendHsc "#stoptype"
 
     appendType' (CTypeSpec (CEnumType (CEnum ident defs _ _) _)) = do
       let name' = identName "enum " ident
-      unless (null name') $ appendHsc $ "#integral_t " ++ name'
+      unless (null name') $ appendHsc $ "#integral_t " <> name'
 
       for_ defs $ \ds ->
         for_ ds $ \(Ident nm _ _, _) ->
-          appendHsc $ "#num " ++ nm
+          appendHsc $ "#num " <> nm
 
-    appendType' _ = return ()
+    appendType' _ = pure ()
 
     identName pref ident = case ident of
                         Nothing -> declrName
-                        Just (Ident nm _ _) -> pref ++ nm
+                        Just (Ident nm _ _) -> pref <> nm
 
 -- The remainder of this file is some hairy code for turning various
 -- constructs into Bindings-DSL type names, such as turning "int ** foo" into
@@ -530,45 +514,45 @@ derDeclrTypeName' cStyle isDirect declSpecs ddrs = do
   where
     fullTypeName' :: String -> Lengthiness -> Signedness -> [CDeclarationSpecifier a] -> Output String
     fullTypeName' "" _ None []
-        | cStyle    = return "void"
-        | otherwise = return ""
+        | cStyle    = pure "void"
+        | otherwise = pure ""
     fullTypeName' "" _ Unsigned []
-        | cStyle    = return "int"
-        | otherwise = return "CUInt"
+        | cStyle    = pure "int"
+        | otherwise = pure "CUInt"
     fullTypeName' "" _ Signed []
-        | cStyle    = return "int"
-        | otherwise = return "CInt"
+        | cStyle    = pure "int"
+        | otherwise = pure "CInt"
 
-    fullTypeName' ty _ _ [] = return ty
+    fullTypeName' ty _ _ [] = pure ty
 
     fullTypeName' ty l s (x:xs) = case x of
       CTypeSpec (CSignedType _)
-          | cStyle    -> ("signed " ++) <$> fullTypeName' ty l Signed xs
+          | cStyle    -> ("signed " <>) <$> fullTypeName' ty l Signed xs
           | otherwise -> fullTypeName' ty l Signed xs
 
       CTypeSpec (CUnsigType _)
-          | cStyle    -> ("unsigned " ++) <$> fullTypeName' ty l Unsigned xs
+          | cStyle    -> ("unsigned " <>) <$> fullTypeName' ty l Unsigned xs
           | otherwise -> fullTypeName' ty l Unsigned xs
 
       CTypeSpec tspec@(CLongType _)
         | cStyle    -> fullTypeName' ((case l of
                                           Long -> "long "
-                                          Unspecified -> "") ++ cTypeName tspec) Long s xs
+                                          Unspecified -> "") <> cTypeName tspec) Long s xs
         | otherwise -> typeName tspec l s >>= \ty' -> fullTypeName' ty' Long s xs
 
       CTypeSpec tspec
         | cStyle    -> fullTypeName' ((case l of
                                           Long -> "long "
-                                          Unspecified -> "") ++ cTypeName tspec) Unspecified s xs
+                                          Unspecified -> "") <> cTypeName tspec) Unspecified s xs
         | otherwise -> typeName tspec l s >>= \ty' -> fullTypeName' ty' Unspecified s xs
 
       CTypeQual qual
         | cStyle -> do
           baseType <- fullTypeName' ty l s xs
-          return $ let q = qualToStr qual
+          pure $ let q = qualToStr qual
                    in if null q
                       then baseType
-                      else q ++ " " ++ baseType
+                      else q <> " " <> baseType
 
       _ -> fullTypeName' ty l s xs
 
@@ -587,19 +571,19 @@ applyDeclrs cStyle isDirect baseType (CFunDeclr (Right (decls, _)) _ _:_)
     argTypes <- renderList " -> " (funTypes decls (if null baseType
                                                    then "IO ()"
                                                    else baseType))
-    return $ "FunPtr " ++ tyParens argTypes
+    pure $ "FunPtr " <> tyParens argTypes
 
   where renderList str xs = intercalate str <$> filter (not . null) <$> xs
-        funTypes xs bt    = (++) <$> mapM (cdeclTypeName' cStyle isDirect) xs
+        funTypes xs bt    = (<>) <$> mapM (cdeclTypeName' cStyle isDirect) xs
                                  <*> pure [bt]
 
 applyDeclrs cStyle isDirect baseType decl@(CPtrDeclr quals _:[])
   | cStyle && baseType == "" = applyDeclrs cStyle isDirect "void" decl
-  | cStyle                  = return $ baseType ++ "*"
-                                    ++ preQualsToString quals
-  | baseType == ""          = return "Ptr ()"
-  | baseType == "CChar"     = return "CString"
-  | otherwise               = return $ "Ptr " ++ baseType
+  | cStyle                  = pure $ baseType <> "*"
+                                    <> preQualsToString quals
+  | baseType == ""          = pure "Ptr ()"
+  | baseType == "CChar"     = pure "CString"
+  | otherwise               = pure $ "Ptr " <> baseType
 
 applyDeclrs cStyle isDirect baseType (CPtrDeclr quals _:xs)
   | cStyle    = concatM [ applyDeclrs cStyle isDirect baseType xs
@@ -617,7 +601,7 @@ applyDeclrs cStyle isDirect baseType (CArrDeclr quals _ _:xs)
                         , tyParens `fmap`
                               applyDeclrs cStyle isDirect baseType xs ]
 
-applyDeclrs _ _ baseType _ = return baseType
+applyDeclrs _ _ baseType _ = pure baseType
 
 preQualsToString :: [CTypeQualifier a] -> String
 preQualsToString = prefixWith ' ' . qualsToStr
@@ -631,7 +615,7 @@ sufQualsToString = suffixWith ' ' . qualsToStr
 
 suffixWith :: a -> [a] -> [a]
 suffixWith _ [] = []
-suffixWith x xs = xs ++ [x]
+suffixWith x xs = xs <> [x]
 
 qualsToStr :: [CTypeQualifier a] -> String
 qualsToStr = unwords . map qualToStr
@@ -653,52 +637,52 @@ qualToStr (CClWrOnlyQual _) = "__write_only"
 
 typeName :: CTypeSpecifier a -> Lengthiness -> Signedness -> Output String
 
-typeName (CVoidType _) _ _   = return ""
-typeName (CFloatType _) _ _  = return "CFloat"
-typeName (CDoubleType _) _ _ = return "CDouble"
-typeName (CBoolType _) _ _   = return "CInt"
+typeName (CVoidType _) _ _   = pure ""
+typeName (CFloatType _) _ _  = pure "CFloat"
+typeName (CDoubleType _) _ _ = pure "CDouble"
+typeName (CBoolType _) _ _   = pure "CInt"
 
-typeName (CCharType _) _ Signed   = return "CSChar"
-typeName (CCharType _) _ Unsigned = return "CUChar"
-typeName (CCharType _) _ _        = return "CChar"
+typeName (CCharType _) _ Signed   = pure "CSChar"
+typeName (CCharType _) _ Unsigned = pure "CUChar"
+typeName (CCharType _) _ _        = pure "CChar"
 
-typeName (CShortType _) _ Signed   = return "CShort"
-typeName (CShortType _) _ Unsigned = return "CUShort"
-typeName (CShortType _) _ _        = return "CShort"
+typeName (CShortType _) _ Signed   = pure "CShort"
+typeName (CShortType _) _ Unsigned = pure "CUShort"
+typeName (CShortType _) _ _        = pure "CShort"
 
-typeName (CIntType _) Long Signed   = return "CLong"
-typeName (CIntType _) Long Unsigned = return "CULong"
-typeName (CIntType _) Long _        = return "CLong"
+typeName (CIntType _) Long Signed   = pure "CLong"
+typeName (CIntType _) Long Unsigned = pure "CULong"
+typeName (CIntType _) Long _        = pure "CLong"
 
-typeName (CIntType _) _ Signed   = return "CInt"
-typeName (CIntType _) _ Unsigned = return "CUInt"
-typeName (CIntType _) _ _        = return "CInt"
+typeName (CIntType _) _ Signed   = pure "CInt"
+typeName (CIntType _) _ Unsigned = pure "CUInt"
+typeName (CIntType _) _ _        = pure "CInt"
 
-typeName (CLongType _) Long Signed   = return "CLLong"
-typeName (CLongType _) Long Unsigned = return "CULLong"
-typeName (CLongType _) Long _        = return "CLLong"
+typeName (CLongType _) Long Signed   = pure "CLLong"
+typeName (CLongType _) Long Unsigned = pure "CULLong"
+typeName (CLongType _) Long _        = pure "CLLong"
 
-typeName (CLongType _) _ Signed   = return "CLong"
-typeName (CLongType _) _ Unsigned = return "CULong"
-typeName (CLongType _) _ _        = return "CLong"
+typeName (CLongType _) _ Signed   = pure "CLong"
+typeName (CLongType _) _ Unsigned = pure "CULong"
+typeName (CLongType _) _ _        = pure "CLong"
 
 typeName (CTypeDef (Ident nm _ _) _) _ _ = do
   definition <- lookupType nm
   case definition of
-    Nothing -> return $ "<" ++ nm ++ ">"
+    Nothing -> pure $ "<" <> nm <> ">"
     Just Typedef { typedefName = defNm } ->
-      return defNm
+      pure defNm
 
 typeName (CSUType (CStruct tag (Just (Ident nm _ _)) _ _ _) _) _ _ =
-  return $ "<" ++ structTagPrefix tag ++ nm ++ ">"
+  pure $ "<" <> structTagPrefix tag <> nm <> ">"
 typeName (CEnumType (CEnum (Just (Ident nm _ _)) _ _ _) _) _ _ =
-  return $ "<enum " ++ nm ++ ">"
+  pure $ "<enum " <> nm <> ">"
 
-typeName (CComplexType _) _ _  = return ""
-typeName (CTypeOfExpr _ _) _ _ = return ""
-typeName (CTypeOfType _ _) _ _ = return ""
+typeName (CComplexType _) _ _  = pure ""
+typeName (CTypeOfExpr _ _) _ _ = pure ""
+typeName (CTypeOfType _ _) _ _ = pure ""
 
-typeName _ _ _ = return ""
+typeName _ _ _ = pure ""
 
 cTypeName :: CTypeSpecifier a -> String
 cTypeName (CVoidType _)               = ""

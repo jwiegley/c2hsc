@@ -3,21 +3,23 @@ module Main where
 import Control.Logging hiding (debug)
 import Control.Monad hiding (sequence)
 import Data.C2Hsc (C2HscOptions(..), runArgs)
-import Data.List as L
-import Data.Time.Clock
+import Data.List (null)
+import Data.Semigroup
 import Data.Time.Calendar
+import Data.Time.Clock
 import Prelude hiding (concat, sequence, mapM, mapM_, foldr)
 import System.Console.CmdArgs
 import System.Environment
 
+
 version :: String
-version = "0.7.0"
+version = "0.8.0"
 
 copyright :: Integer -> String
-copyright year = "2012-" ++ (show year)
+copyright year = "2012-" <> (show year)
 
 c2hscSummary :: Integer -> String
-c2hscSummary year = "c2hsc v" ++ version ++ ", (C) John Wiegley " ++ (copyright year)
+c2hscSummary year = "c2hsc v" <> version <> ", (C) John Wiegley " <> (copyright year)
 
 c2hscOptions :: Integer -> C2HscOptions
 c2hscOptions year = C2HscOptions
@@ -47,7 +49,7 @@ c2hscOptions year = C2HscOptions
 
 main :: IO ()
 main = getArgs >>= \mainArgs -> do
-  (year, _, _) <- getCurrentTime >>= return . toGregorian . utctDay
+  (year, _, _) <- getCurrentTime >>= pure . toGregorian . utctDay
   opts <- withArgs (if null mainArgs then ["--help"] else mainArgs)
           (cmdArgs $ c2hscOptions year)
   withStderrLogging $ runArgs opts Nothing False
