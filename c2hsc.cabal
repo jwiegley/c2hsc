@@ -1,72 +1,120 @@
-Name:          c2hsc
-Version:       0.7.1
-Synopsis:      Convert C API header files to .hsc and .hsc.helper.c files
-Description:   Convert C API header files to .hsc and .hsc.helper.c files
-Homepage:      https://github.com/jwiegley/c2hsc
-License:       BSD3
-License-file:  LICENSE
-Author:        John Wiegley
-Maintainer:    John Wiegley <johnw@newartisans.com>
-Category:      Development
-Build-type:    Simple
-Cabal-version: >= 1.10
+cabal-version: 3.8
+
+name:          c2hsc
+version:       0.8.0
+synopsis:      Convert C API header files to .hsc and .hsc.helper.c files
+description:   Convert C API header files to .hsc and .hsc.helper.c files
+homepage:      https://github.com/jwiegley/c2hsc
+license:       BSD-3-Clause
+license-file:  LICENSE
+author:        John Wiegley
+maintainer:    John Wiegley <johnw@newartisans.com>
+category:      Development
+build-type:    Simple
 
 Extra-Source-Files: README.md
 
-Library
-    default-language:   Haskell2010
-    ghc-options: -Wall
-    build-depends:
-        base            >= 3 && < 5
-      , mtl             >= 2.0
-      , containers      >= 0.4
-      , transformers    >= 0.2
-      , directory       >= 1.1
-      , language-c      >= 0.4
-      , logging         >= 1.3.0
-      , HStringTemplate >= 0.7.1
-      , pretty          >= 1.1
-      , filepath        >= 1.3
-      , split           >= 0.2
-      , temporary       >= 1.1.2.5
-      , data-default    >= 0.5.3
-      , text            >= 0.11.3.1
-    exposed-modules:
-        Data.C2Hsc
-    default-extensions: 
-        BangPatterns
-        FlexibleContexts
-        OverloadedStrings
+library
+  default-language:   GHC2021
+  hs-source-dirs: src
+  ghc-options:
+    -Weverything
+    -Werror=identities
+    -Werror=incomplete-patterns
+    -Werror=incomplete-record-updates
+    -Werror=missing-fields
+    -Wno-all-missed-specialisations
+    -Wno-deprecations
+    -Wno-implicit-prelude
+    -Wno-missed-specialisations
+    -Wno-missing-deriving-strategies
+    -Wno-missing-export-lists
+    -Wno-missing-import-lists
+    -Wno-missing-kind-signatures
+    -Wno-missing-local-signatures
+    -Wno-missing-safe-haskell-mode
+    -Wno-monomorphism-restriction
+    -Wno-name-shadowing
+    -Wno-orphans
+    -Wno-prepositive-qualified-module
+    -Wno-safe
+    -Wno-type-defaults
+    -Wno-unsafe
+    -Wno-unused-imports
+    -Wno-unused-top-binds
+    -Wno-redundant-constraints
+    -Wno-incomplete-uni-patterns
+  build-depends:
+      base            >= 3 && < 5
+    , containers      >= 0.4
+    , data-default    >= 0.5.3
+    , directory       >= 1.1
+    , filepath        >= 1.3
+    , HStringTemplate >= 0.7.1
+    , language-c      >= 0.4
+    , logging         >= 1.3.0
+    , pretty          >= 1.1
+    , split           >= 0.2
+    , temporary       >= 1.1.2.5
+    , text            >= 0.11.3.1
+    , transformers    >= 0.2
+  exposed-modules:
+    Data.C2Hsc
+  default-extensions: 
+    BangPatterns
+    FlexibleContexts
+    OverloadedStrings
 
-Executable c2hsc
-    default-language:   Haskell2010
+executable c2hsc
+  default-language:   GHC2021
+  main-is: Main.hs
+  hs-source-dirs: app
+  ghc-options:
+    -Weverything
+    -Werror=identities
+    -Werror=incomplete-patterns
+    -Werror=incomplete-record-updates
+    -Werror=missing-fields
+    -Wno-all-missed-specialisations
+    -Wno-deprecations
+    -Wno-implicit-prelude
+    -Wno-missed-specialisations
+    -Wno-missing-deriving-strategies
+    -Wno-missing-export-lists
+    -Wno-missing-import-lists
+    -Wno-missing-kind-signatures
+    -Wno-missing-local-signatures
+    -Wno-missing-safe-haskell-mode
+    -Wno-monomorphism-restriction
+    -Wno-name-shadowing
+    -Wno-orphans
+    -Wno-prepositive-qualified-module
+    -Wno-safe
+    -Wno-type-defaults
+    -Wno-unsafe
+    -Wno-unused-imports
+    -Wno-unused-top-binds
+    -Wno-redundant-constraints
+    -O2
+    -flate-dmd-anal
+    -fstatic-argument-transformation
+    -funbox-strict-fields
+    -fexpose-all-unfoldings
+    -fspecialise-aggressively
+    -flate-specialise
+  build-depends: 
+      base            >= 4   && < 5
+    , c2hsc
+    , cmdargs         >= 0.9
+    , logging         >= 1.3.0
+    , time            >= 1.8.0.2
+
+test-suite test
+    default-language:   GHC2021
+    type: exitcode-stdio-1.0
     main-is: Main.hs
-    ghc-options: -Wall
-
+    hs-source-dirs: test
     build-depends: 
-        base            >= 4   && < 5
-      , c2hsc
-      , cmdargs         >= 0.9
-      , HStringTemplate >= 0.7.1
-      , pretty          >= 1.1
-      , filepath        >= 1.3
-      , directory       >= 1.1
-      , language-c      >= 0.4
-      , logging         >= 1.3.0
-      , containers      >= 0.4
-      , split           >= 0.2
-      , transformers    >= 0.2
-      , temporary       >= 1.1.2.5
-      , data-default    >= 0.5.3
-      , text            >= 0.11.3.1
-      , time            >= 1.8.0.2
-
-Test-suite test
-    default-language:   Haskell2010
-    Type: exitcode-stdio-1.0
-    Main-is: main.hs
-    Hs-source-dirs: test
-    Build-depends: 
         base         >= 4 && < 5
       , c2hsc
       , hspec        >= 1.8.3
@@ -74,9 +122,11 @@ Test-suite test
       , monad-logger >= 0.3.4.1
       , logging      >= 1.3.0
       , text         >= 0.11.3.1
+      , temporary       >= 1.1.2.5
+      , filepath        >= 1.3
+      , directory       >= 1.1
+      , data-default    >= 0.5.3
 
-Source-repository head
-  Type:     git
-  Location: https://github.com/jwiegley/c2hsc
-
--- c2hsc.cabal ends here
+source-repository head
+  type:     git
+  location: https://github.com/jwiegley/c2hsc
